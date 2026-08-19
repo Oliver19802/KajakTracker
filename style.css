@@ -290,11 +290,39 @@ button.danger {
   font-size: 8px;
 }
 
+.mapMenuControl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.mapMenuButton {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  min-height: 46px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--dark);
+  box-shadow: 0 2px 9px rgba(0, 0, 0, .2);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.mapMenuButton.isActive {
+  background: var(--teal);
+  color: #fff;
+}
+
 .mapToolsControl {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  width: min(300px, calc(100vw - 30px));
+  width: min(280px, 75vw);
   max-height: calc(42vh - 20px);
+  margin-top: 7px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -302,7 +330,15 @@ button.danger {
   box-shadow: 0 2px 8px rgba(0, 0, 0, .16);
 }
 
+.mapToolsControl[hidden] {
+  display: none;
+}
+
 .mapToolsControl > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   min-height: 44px;
   padding: 8px 10px;
   border-radius: 0;
@@ -320,6 +356,12 @@ button.danger {
 .mapToolsControl button.isActive {
   background: var(--teal);
   color: white;
+}
+
+.mapToolsControl > button.isActive::after {
+  content: "✓";
+  flex: 0 0 auto;
+  font-size: 13px;
 }
 
 .navigationPanel {

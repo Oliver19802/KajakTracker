@@ -122,6 +122,7 @@ let hazardAbortController = null;
 let loadedHazardBounds = null;
 let hazardFeatures = [];
 let searchControlElements = {};
+let mapMenuElements = {};
 let lastSearchAt = 0;
 
 const HAZARD_MIN_ZOOM = 12;
@@ -706,6 +707,13 @@ function setSearchMessage(message, isError = false) {
   status.classList.toggle('isError', isError);
 }
 
+function closeMapMenu() {
+  if (!mapMenuElements.panel) return;
+  mapMenuElements.panel.hidden = true;
+  mapMenuElements.button.classList.remove('isActive');
+  mapMenuElements.button.setAttribute('aria-expanded', 'false');
+}
+
 function renderSearchResults(results) {
   const list = searchControlElements.results;
   list.replaceChildren();
@@ -730,6 +738,10 @@ function renderSearchResults(results) {
       } else map.setView([lat, lon], 13);
       list.replaceChildren();
       setSearchMessage('');
+      searchControlElements.panel.hidden = true;
+      mapModeButtons.search.classList.remove('isActive');
+      mapModeButtons.search.setAttribute('aria-expanded', 'false');
+      closeMapMenu();
     });
     list.appendChild(button);
   });
@@ -771,13 +783,33 @@ async function searchMap() {
 function addMapToolsControl() {
   const control = L.control({ position: 'topright' });
   control.onAdd = () => {
-    const container = L.DomUtil.create('div', 'mapToolsControl');
+    const wrapper = L.DomUtil.create('div', 'mapMenuControl');
+    const menuButton = document.createElement('button');
+    menuButton.type = 'button';
+    menuButton.className = 'mapMenuButton';
+    menuButton.textContent = '☰';
+    menuButton.setAttribute('aria-label', 'Kartenfunktionen öffnen');
+    menuButton.setAttribute('aria-expanded', 'false');
+    wrapper.appendChild(menuButton);
+
+    const container = document.createElement('div');
+    container.className = 'mapToolsControl';
+    container.hidden = true;
+    wrapper.appendChild(container);
+
+    mapMenuElements = { button: menuButton, panel: container };
+    L.DomEvent.on(menuButton, 'click', () => {
+      container.hidden = !container.hidden;
+      menuButton.classList.toggle('isActive', !container.hidden);
+      menuButton.setAttribute('aria-expanded', String(!container.hidden));
+    });
+
     const tools = [
       ['previousTracks', '🟡 Bereits gefahrene Strecken', togglePreviousTracks],
       ['seamark', '⚓ OpenSeaMap', toggleSeamark],
-      ['navigation', '🧭 Navigation', () => setNavigationEnabled(!navigationEnabled)],
       ['locks', '🔒 Schleusen', () => toggleHazard('lock')],
-      ['weirs', '⚠️ Wehre', () => toggleHazard('weir')]
+      ['weirs', '⚠️ Wehre', () => toggleHazard('weir')],
+      ['navigation', '🧭 Navigation', () => setNavigationEnabled(!navigationEnabled)]
     ];
 
     tools.forEach(([name, text, handler]) => {
@@ -869,15 +901,16 @@ function addMapToolsControl() {
       stop: stopButton
     };
 
-    L.DomEvent.disableClickPropagation(container);
-    L.DomEvent.disableScrollPropagation(container);
-    return container;
+    L.DomEvent.disableClickPropagation(wrapper);
+    L.DomEvent.disableScrollPropagation(wrapper);
+    return wrapper;
   };
   control.addTo(map);
 }
 
 addMapToolsControl();
 map.on('click', chooseNavigationTarget);
+map.on('click', closeMapMenu);
 map.on('moveend zoomend', scheduleHazardLoad);
 const initialOverlays = savedMapOverlays();
 if (initialOverlays.seamark) seamark.addTo(map);
