@@ -125,6 +125,8 @@ let hazardFeatures = [];
 let searchControlElements = {};
 let mapMenuElements = {};
 let lastSearchAt = 0;
+let searchInFlight = false;
+const searchResultCache = new Map();
 let restaurantsVisible = false;
 let restaurantFeatures = [];
 let loadedRestaurantBounds = null;
@@ -141,6 +143,8 @@ const RESTAURANT_OVERPASS_URLS = [
   'https://overpass.private.coffee/api/interpreter'
 ];
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const NOMINATIM_MIN_INTERVAL_MS = 1000;
+const NOMINATIM_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
 const RESTAURANT_MIN_ZOOM = 14;
 const RESTAURANT_REQUEST_TIMEOUT_MS = 12000;
 const RESTAURANT_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
@@ -770,12 +774,27 @@ async function searchMap() {
     setSearchMessage('Bitte mindestens 2 Zeichen eingeben.', true);
     return;
   }
-  const wait = Math.max(0, 1000 - (Date.now() - lastSearchAt));
-  if (wait) await new Promise(resolve => setTimeout(resolve, wait));
-  lastSearchAt = Date.now();
+  if (searchInFlight) return;
+
+  const cacheKey = query.toLocaleLowerCase('de');
+  const cached = searchResultCache.get(cacheKey);
+  if (cached && Date.now() - cached.savedAt <= NOMINATIM_CACHE_MAX_AGE_MS) {
+    renderSearchResults(cached.results);
+    setSearchMessage(cached.results.length
+      ? 'Suchergebnisse (© OpenStreetMap)'
+      : 'Nichts gefunden.');
+    return;
+  }
+  if (cached) searchResultCache.delete(cacheKey);
+
+  searchInFlight = true;
   searchControlElements.submit.disabled = true;
   setSearchMessage('Suche …');
   try {
+    const wait = Math.max(0,
+      NOMINATIM_MIN_INTERVAL_MS - (Date.now() - lastSearchAt));
+    if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+    lastSearchAt = Date.now();
     const params = new URLSearchParams({
       q: query,
       format: 'jsonv2',
@@ -787,12 +806,14 @@ async function searchMap() {
     if (!response.ok) throw new Error(`Nominatim-HTTP ${response.status}`);
     const data = await response.json();
     const results = Array.isArray(data) ? data : [];
+    searchResultCache.set(cacheKey, { results, savedAt: Date.now() });
     renderSearchResults(results);
     setSearchMessage(results.length ? 'Suchergebnisse (© OpenStreetMap)' : 'Nichts gefunden.');
   } catch (error) {
     console.error('Kartensuche fehlgeschlagen:', error);
     setSearchMessage('Suche derzeit nicht verfügbar.', true);
   } finally {
+    searchInFlight = false;
     searchControlElements.submit.disabled = false;
   }
 }

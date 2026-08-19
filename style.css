@@ -203,6 +203,12 @@ button.danger {
   color: #183f55;
 }
 
+.privacyNotice {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #c8dde1;
+}
+
 /* ================================
    Fahrtenverwaltung
    ================================ */
