@@ -291,8 +291,10 @@ button.danger {
 }
 
 .mapToolsControl {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(300px, calc(100vw - 30px));
+  max-height: calc(42vh - 20px);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -306,7 +308,7 @@ button.danger {
   border-radius: 0;
   background: white;
   color: var(--dark);
-  font-size: 12px;
+  font-size: 11px;
   text-align: left;
   white-space: nowrap;
 }
@@ -321,6 +323,7 @@ button.danger {
 }
 
 .navigationPanel {
+  grid-column: 1 / -1;
   max-width: 230px;
   padding: 9px;
   border-top: 1px solid var(--border);
@@ -348,6 +351,101 @@ button.danger {
   min-height: 38px;
   padding: 7px 8px;
   font-size: 11px;
+}
+
+.mapToolStatus,
+.searchPanel {
+  grid-column: 1 / -1;
+}
+
+.mapToolStatus {
+  padding: 6px 9px;
+  border-top: 1px solid var(--border);
+  background: #fff;
+  color: #52747c;
+  font-size: 10px;
+}
+
+.mapToolStatus.isError,
+.searchStatus.isError {
+  color: #b52c27;
+}
+
+.searchPanel {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  background: #fff;
+}
+
+.searchRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px;
+}
+
+.searchRow input {
+  min-width: 0;
+  min-height: 40px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 16px;
+}
+
+.searchRow button {
+  min-height: 40px;
+  padding: 7px 9px;
+  font-size: 11px;
+}
+
+.searchStatus {
+  padding-top: 6px;
+  color: #52747c;
+  font-size: 10px;
+}
+
+.searchResults {
+  display: grid;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.searchResults .searchResult {
+  min-height: 38px;
+  padding: 6px 7px;
+  border: 1px solid #d9e7e9;
+  border-radius: 8px;
+  background: #f7fafb;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.hazardIconWrapper {
+  background: transparent;
+  border: 0;
+}
+
+.hazardIcon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .35);
+  font-size: 17px;
+}
+
+.lockIcon {
+  background: #246b9b;
+}
+
+.weirIcon {
+  background: #f5a623;
 }
 
 /* Kleine iPhones */

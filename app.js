@@ -103,11 +103,33 @@ let line = L.polyline(
 const previousTracksLayer = L.layerGroup().addTo(map);
 const navigationLayer = L.layerGroup().addTo(map);
 
+map.createPane('hazardPane');
+map.getPane('hazardPane').style.zIndex = 650;
+
+const locksLayer = L.layerGroup().addTo(map);
+const weirsLayer = L.layerGroup().addTo(map);
+const searchLayer = L.layerGroup().addTo(map);
+
 let previousTracksVisible = false;
 let navigationEnabled = false;
 let navigationTarget = null;
 let navigationRoute = null;
 let navigationControlElements = {};
+let locksVisible = false;
+let weirsVisible = false;
+let hazardLoadTimer = null;
+let hazardAbortController = null;
+let loadedHazardBounds = null;
+let hazardFeatures = [];
+let searchControlElements = {};
+let lastSearchAt = 0;
+
+const HAZARD_MIN_ZOOM = 12;
+const OVERPASS_URLS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter'
+];
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 
 
 /* =========================================================
@@ -457,7 +479,12 @@ async function startWaterNavigation() {
     const distance = Number.isFinite(reportedDistance)
       ? reportedDistance
       : routeDistanceMeters(latLngs);
-    setNavigationMessage(`Wasserweg-Route: ${fmtKm(distance)} km`);
+    const routeHasWeir = warnAboutRouteWeirs(latLngs);
+    setNavigationMessage(
+      `Wasserweg-Route: ${fmtKm(distance)} km` +
+      (routeHasWeir ? ' · Achtung: Wehr auf/nahe der Route' : ''),
+      routeHasWeir
+    );
     navigationControlElements.stop.hidden = false;
     map.fitBounds(navigationRoute.getBounds(), { padding: [30, 30] });
   } catch (error) {
@@ -485,6 +512,262 @@ function chooseNavigationTarget(event) {
   setNavigationMessage('Ziel gewählt');
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function hazardLatLng(element) {
+  const lat = Number(element.lat ?? element.center?.lat);
+  const lon = Number(element.lon ?? element.center?.lon);
+  return Number.isFinite(lat) && Number.isFinite(lon) ? L.latLng(lat, lon) : null;
+}
+
+function hazardKind(element) {
+  const tags = element.tags || {};
+  if (tags.waterway === 'weir') return 'weir';
+  if (tags.waterway === 'lock_gate' || tags.waterway === 'lock' || tags.lock === 'yes') {
+    return 'lock';
+  }
+  return null;
+}
+
+function hazardPopup(feature) {
+  const tags = feature.tags;
+  const title = tags.name || (feature.kind === 'weir' ? 'Wehr' : 'Schleuse');
+  const details = [
+    tags.waterway && `Wasserweg-Typ: ${tags.waterway}`,
+    tags.lock_name && `Schleuse: ${tags.lock_name}`,
+    tags.operator && `Betreiber: ${tags.operator}`,
+    tags.opening_hours && `Öffnungszeiten: ${tags.opening_hours}`,
+    tags.description && `Hinweis: ${tags.description}`
+  ].filter(Boolean);
+  return `<strong>${escapeHtml(title)}</strong>${details.length
+    ? `<br>${details.map(escapeHtml).join('<br>')}`
+    : ''}<br><small>Daten: OpenStreetMap-Mitwirkende</small>`;
+}
+
+function renderHazards() {
+  locksLayer.clearLayers();
+  weirsLayer.clearLayers();
+  if (map.getZoom() < HAZARD_MIN_ZOOM) return;
+
+  const visibleBounds = map.getBounds().pad(0.05);
+  const candidates = hazardFeatures
+    .filter(feature => visibleBounds.contains(feature.latLng))
+    .sort((a, b) => a.latLng.distanceTo(map.getCenter()) -
+      b.latLng.distanceTo(map.getCenter()));
+  const visibleFeatures = [
+    ...candidates.filter(feature => feature.kind === 'lock').slice(0, 100),
+    ...candidates.filter(feature => feature.kind === 'weir').slice(0, 100)
+  ];
+
+  visibleFeatures.forEach(feature => {
+    if ((feature.kind === 'lock' && !locksVisible) ||
+        (feature.kind === 'weir' && !weirsVisible)) return;
+    const isWeir = feature.kind === 'weir';
+    const icon = L.divIcon({
+      className: 'hazardIconWrapper',
+      html: `<span class="hazardIcon ${isWeir ? 'weirIcon' : 'lockIcon'}" aria-hidden="true">${isWeir ? '⚠️' : '🔒'}</span>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    });
+    L.marker(feature.latLng, { icon, pane: 'hazardPane' })
+      .bindPopup(hazardPopup(feature))
+      .addTo(isWeir ? weirsLayer : locksLayer);
+  });
+}
+
+function setHazardMessage(message, isError = false) {
+  const status = searchControlElements.hazardStatus;
+  if (!status) return;
+  status.hidden = !locksVisible && !weirsVisible;
+  status.textContent = message;
+  status.classList.toggle('isError', isError);
+}
+
+function paddedMapBounds() {
+  const bounds = map.getBounds();
+  const latPad = (bounds.getNorth() - bounds.getSouth()) * 0.3;
+  const lonPad = (bounds.getEast() - bounds.getWest()) * 0.3;
+  return L.latLngBounds(
+    [bounds.getSouth() - latPad, bounds.getWest() - lonPad],
+    [bounds.getNorth() + latPad, bounds.getEast() + lonPad]
+  );
+}
+
+async function loadHazards() {
+  if ((!locksVisible && !weirsVisible) || map.getZoom() < HAZARD_MIN_ZOOM) {
+    renderHazards();
+    if (locksVisible || weirsVisible) {
+      setHazardMessage(`Schleusen/Wehre ab Zoom ${HAZARD_MIN_ZOOM}`);
+    }
+    return;
+  }
+
+  const visibleBounds = map.getBounds();
+  if (loadedHazardBounds?.contains(visibleBounds)) {
+    renderHazards();
+    return;
+  }
+
+  const requestBounds = paddedMapBounds();
+  const bbox = [requestBounds.getSouth(), requestBounds.getWest(),
+    requestBounds.getNorth(), requestBounds.getEast()]
+    .map(value => value.toFixed(6)).join(',');
+  const query = `[out:json][timeout:20];(
+    node["waterway"="lock_gate"](${bbox});
+    way["waterway"="lock_gate"](${bbox});
+    node["waterway"="lock"](${bbox});
+    way["waterway"="lock"](${bbox});
+    node["lock"="yes"](${bbox});
+    way["lock"="yes"](${bbox});
+    node["waterway"="weir"](${bbox});
+    way["waterway"="weir"](${bbox});
+  );out center tags;`;
+
+  hazardAbortController?.abort();
+  hazardAbortController = new AbortController();
+  setHazardMessage('Schleusen und Wehre werden geladen …');
+
+  try {
+    let response;
+    for (const url of OVERPASS_URLS) {
+      response = await fetch(url, {
+        method: 'POST',
+        body: new URLSearchParams({ data: query }),
+        signal: hazardAbortController.signal
+      });
+      if (response.ok) break;
+    }
+    if (!response?.ok) throw new Error(`Overpass-HTTP ${response?.status || 0}`);
+    const data = await response.json();
+    const seen = new Set();
+    const rawFeatures = (data.elements || []).flatMap(element => {
+      const kind = hazardKind(element);
+      const latLng = hazardLatLng(element);
+      const key = `${element.type}/${element.id}`;
+      if (!kind || !latLng || seen.has(key)) return [];
+      seen.add(key);
+      return [{ kind, latLng, tags: element.tags || {} }];
+    });
+    rawFeatures.sort((a, b) => Number(Boolean(b.tags.name || b.tags.lock_name)) -
+      Number(Boolean(a.tags.name || a.tags.lock_name)));
+    hazardFeatures = rawFeatures.filter((feature, index, features) =>
+      !features.slice(0, index).some(other =>
+        other.kind === feature.kind && other.latLng.distanceTo(feature.latLng) < 20
+      )
+    );
+    loadedHazardBounds = requestBounds;
+    renderHazards();
+    setHazardMessage(
+      `${hazardFeatures.filter(f => f.kind === 'lock').length} Schleusen, ` +
+      `${hazardFeatures.filter(f => f.kind === 'weir').length} Wehre`
+    );
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    console.error('OSM-Hindernisse konnten nicht geladen werden:', error);
+    setHazardMessage('Schleusen/Wehre derzeit nicht verfügbar', true);
+  }
+}
+
+function scheduleHazardLoad() {
+  clearTimeout(hazardLoadTimer);
+  hazardLoadTimer = setTimeout(loadHazards, 700);
+}
+
+function toggleHazard(kind) {
+  if (kind === 'lock') locksVisible = !locksVisible;
+  else weirsVisible = !weirsVisible;
+  setToolButton('locks', locksVisible);
+  setToolButton('weirs', weirsVisible);
+  if (searchControlElements.hazardStatus) {
+    searchControlElements.hazardStatus.hidden = !locksVisible && !weirsVisible;
+  }
+  renderHazards();
+  scheduleHazardLoad();
+}
+
+function warnAboutRouteWeirs(latLngs) {
+  if (!weirsVisible || !hazardFeatures.length) return false;
+  return hazardFeatures
+    .filter(feature => feature.kind === 'weir')
+    .some(feature => latLngs.some(point => feature.latLng.distanceTo(point) <= 150));
+}
+
+function setSearchMessage(message, isError = false) {
+  const status = searchControlElements.searchStatus;
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle('isError', isError);
+}
+
+function renderSearchResults(results) {
+  const list = searchControlElements.results;
+  list.replaceChildren();
+  results.forEach(result => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'searchResult';
+    button.textContent = result.display_name;
+    button.addEventListener('click', () => {
+      const lat = Number(result.lat);
+      const lon = Number(result.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      searchLayer.clearLayers();
+      L.marker([lat, lon]).addTo(searchLayer)
+        .bindPopup(escapeHtml(result.display_name))
+        .openPopup();
+      if (Array.isArray(result.boundingbox) && result.boundingbox.length === 4) {
+        map.fitBounds([
+          [Number(result.boundingbox[0]), Number(result.boundingbox[2])],
+          [Number(result.boundingbox[1]), Number(result.boundingbox[3])]
+        ], { maxZoom: 15 });
+      } else map.setView([lat, lon], 13);
+      list.replaceChildren();
+      setSearchMessage('');
+    });
+    list.appendChild(button);
+  });
+}
+
+async function searchMap() {
+  const query = searchControlElements.input.value.trim();
+  if (query.length < 2) {
+    setSearchMessage('Bitte mindestens 2 Zeichen eingeben.', true);
+    return;
+  }
+  const wait = Math.max(0, 1000 - (Date.now() - lastSearchAt));
+  if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+  lastSearchAt = Date.now();
+  searchControlElements.submit.disabled = true;
+  setSearchMessage('Suche …');
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      format: 'jsonv2',
+      limit: '5',
+      addressdetails: '1',
+      'accept-language': 'de'
+    });
+    const response = await fetch(`${NOMINATIM_URL}?${params}`);
+    if (!response.ok) throw new Error(`Nominatim-HTTP ${response.status}`);
+    const data = await response.json();
+    const results = Array.isArray(data) ? data : [];
+    renderSearchResults(results);
+    setSearchMessage(results.length ? 'Suchergebnisse (© OpenStreetMap)' : 'Nichts gefunden.');
+  } catch (error) {
+    console.error('Kartensuche fehlgeschlagen:', error);
+    setSearchMessage('Suche derzeit nicht verfügbar.', true);
+  } finally {
+    searchControlElements.submit.disabled = false;
+  }
+}
+
 function addMapToolsControl() {
   const control = L.control({ position: 'topright' });
   control.onAdd = () => {
@@ -492,7 +775,9 @@ function addMapToolsControl() {
     const tools = [
       ['previousTracks', '🟡 Bereits gefahrene Strecken', togglePreviousTracks],
       ['seamark', '⚓ OpenSeaMap', toggleSeamark],
-      ['navigation', '🧭 Navigation', () => setNavigationEnabled(!navigationEnabled)]
+      ['navigation', '🧭 Navigation', () => setNavigationEnabled(!navigationEnabled)],
+      ['locks', '🔒 Schleusen', () => toggleHazard('lock')],
+      ['weirs', '⚠️ Wehre', () => toggleHazard('weir')]
     ];
 
     tools.forEach(([name, text, handler]) => {
@@ -503,6 +788,57 @@ function addMapToolsControl() {
       L.DomEvent.on(button, 'click', handler);
       mapModeButtons[name] = button;
       container.appendChild(button);
+    });
+
+    const searchButton = document.createElement('button');
+    searchButton.type = 'button';
+    searchButton.textContent = '🔍 Suche';
+    searchButton.setAttribute('aria-expanded', 'false');
+    mapModeButtons.search = searchButton;
+    container.appendChild(searchButton);
+
+    const hazardStatus = document.createElement('div');
+    hazardStatus.className = 'mapToolStatus';
+    hazardStatus.hidden = true;
+    container.appendChild(hazardStatus);
+
+    const searchPanel = document.createElement('div');
+    searchPanel.className = 'searchPanel';
+    searchPanel.hidden = true;
+    const searchRow = document.createElement('div');
+    searchRow.className = 'searchRow';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.placeholder = 'Ort, Fluss oder Gewässer';
+    searchInput.setAttribute('aria-label', 'Kartensuche');
+    const searchSubmit = document.createElement('button');
+    searchSubmit.type = 'button';
+    searchSubmit.textContent = 'Suchen';
+    const searchStatus = document.createElement('div');
+    searchStatus.className = 'searchStatus';
+    const searchResults = document.createElement('div');
+    searchResults.className = 'searchResults';
+    searchRow.append(searchInput, searchSubmit);
+    searchPanel.append(searchRow, searchStatus, searchResults);
+    container.appendChild(searchPanel);
+
+    searchControlElements = {
+      panel: searchPanel,
+      input: searchInput,
+      submit: searchSubmit,
+      searchStatus,
+      results: searchResults,
+      hazardStatus
+    };
+    L.DomEvent.on(searchButton, 'click', () => {
+      searchPanel.hidden = !searchPanel.hidden;
+      searchButton.classList.toggle('isActive', !searchPanel.hidden);
+      searchButton.setAttribute('aria-expanded', String(!searchPanel.hidden));
+      if (!searchPanel.hidden) searchInput.focus();
+    });
+    L.DomEvent.on(searchSubmit, 'click', searchMap);
+    L.DomEvent.on(searchInput, 'keydown', event => {
+      if (event.key === 'Enter') searchMap();
     });
 
     const panel = document.createElement('div');
@@ -542,6 +878,7 @@ function addMapToolsControl() {
 
 addMapToolsControl();
 map.on('click', chooseNavigationTarget);
+map.on('moveend zoomend', scheduleHazardLoad);
 const initialOverlays = savedMapOverlays();
 if (initialOverlays.seamark) seamark.addTo(map);
 previousTracksVisible = Boolean(initialOverlays.previousTracks);
