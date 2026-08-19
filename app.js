@@ -81,6 +81,9 @@ const TRIPS_STORAGE_KEY = 'kajakTrips';
 
 const ACTIVE_TRIP_STORAGE_KEY = 'kajakActiveTrip';
 
+/* 50 km/h in m/s: darüber liegende Werte sind GPS-Ausreißer. */
+const MAX_VALID_SPEED = 50 / 3.6;
+
 
 /* Aktuelle Strecke */
 
@@ -157,6 +160,18 @@ function averageSpeed(distance, duration) {
   return duration > 0
     ? distance / duration
     : 0;
+}
+
+
+function sanitizeSpeed(speed) {
+
+  const value = Number(speed);
+
+  return Number.isFinite(value) &&
+    value >= 0 &&
+    value <= MAX_VALID_SPEED
+      ? value
+      : 0;
 }
 
 
@@ -357,7 +372,10 @@ function restoreActiveTrip() {
 
   totalDistance = Number(activeTrip.totalDistance) || 0;
 
-  maxSpeed = Number(activeTrip.maxSpeed) || 0;
+  maxSpeed =
+    sanitizeSpeed(
+      activeTrip.maxSpeed
+    );
 
   currentSpeed = 0;
 
@@ -471,9 +489,14 @@ function onPosition(pos) {
     pos.coords.speed;
 
 
-  currentSpeed =
+  const hasValidReportedSpeed =
     Number.isFinite(reportedSpeed) &&
-    reportedSpeed >= 0
+    reportedSpeed >= 0 &&
+    reportedSpeed <= MAX_VALID_SPEED;
+
+
+  currentSpeed =
+    hasValidReportedSpeed
       ? reportedSpeed
       : 0;
 
@@ -529,10 +552,7 @@ function onPosition(pos) {
         */
 
         if (
-          !(
-            Number.isFinite(reportedSpeed) &&
-            reportedSpeed >= 0
-          ) &&
+          !hasValidReportedSpeed &&
           previousPoint
         ) {
 
@@ -543,10 +563,17 @@ function onPosition(pos) {
             ) / 1000;
 
 
-          if (seconds > 0) {
+          if (seconds >= 2) {
 
-            currentSpeed =
+            const calculatedSpeed =
               d / seconds;
+
+
+            if (calculatedSpeed <= MAX_VALID_SPEED) {
+
+              currentSpeed =
+                calculatedSpeed;
+            }
           }
         }
 
@@ -874,7 +901,11 @@ function getTrips() {
             ...trip,
             startedAt:
               trip.startedAt ||
-              trip.date
+              trip.date,
+            maxSpeed:
+              sanitizeSpeed(
+                trip.maxSpeed
+              )
           })
         )
       : [];
