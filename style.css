@@ -319,11 +319,12 @@ button.danger {
 
 .mapToolsControl {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  width: min(280px, 75vw);
+  grid-template-columns: 1fr;
+  width: min(280px, 72vw);
   max-height: calc(42vh - 20px);
   margin-top: 7px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: white;
@@ -344,9 +345,11 @@ button.danger {
   border-radius: 0;
   background: white;
   color: var(--dark);
-  font-size: 11px;
+  font-size: 13px;
   text-align: left;
-  white-space: nowrap;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .mapToolsControl > button + button {
@@ -365,8 +368,7 @@ button.danger {
 }
 
 .navigationPanel {
-  grid-column: 1 / -1;
-  max-width: 230px;
+  max-width: 100%;
   padding: 9px;
   border-top: 1px solid var(--border);
   background: white;
@@ -395,11 +397,6 @@ button.danger {
   font-size: 11px;
 }
 
-.mapToolStatus,
-.searchPanel {
-  grid-column: 1 / -1;
-}
-
 .mapToolStatus {
   padding: 6px 9px;
   border-top: 1px solid var(--border);
@@ -414,11 +411,65 @@ button.danger {
 }
 
 .searchPanel {
+  width: min(300px, 75vw);
   max-height: 220px;
   overflow-y: auto;
+  margin-top: 7px;
   padding: 8px;
   border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .16);
+}
+
+.mapSearchControl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.mapSearchButton {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  min-height: 46px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--dark);
+  box-shadow: 0 2px 9px rgba(0, 0, 0, .2);
+  font-size: 19px;
+}
+
+.mapSearchButton.isActive {
+  background: var(--teal);
+  color: #fff;
+}
+
+.restaurantActions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.restaurantActions button {
+  min-height: 38px;
+  padding: 6px 8px;
+  font-size: 10px;
+}
+
+.restaurantStatus {
+  padding-top: 5px;
+  color: #52747c;
+  font-size: 10px;
+}
+
+.restaurantStatus.isError {
+  color: #b52c27;
 }
 
 .searchRow {
@@ -488,6 +539,32 @@ button.danger {
 
 .weirIcon {
   background: #f5a623;
+}
+
+.restaurantIconWrapper {
+  background: transparent;
+  border: 0;
+}
+
+.restaurantIcon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #8a5a2b;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .35);
+  font-size: 18px;
+}
+
+.navigateRestaurantBtn {
+  margin-top: 7px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--teal);
+  color: #fff;
+  font-size: 12px;
 }
 
 /* Kleine iPhones */

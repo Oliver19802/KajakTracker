@@ -109,6 +109,7 @@ map.getPane('hazardPane').style.zIndex = 650;
 const locksLayer = L.layerGroup().addTo(map);
 const weirsLayer = L.layerGroup().addTo(map);
 const searchLayer = L.layerGroup().addTo(map);
+const restaurantsLayer = L.layerGroup().addTo(map);
 
 let previousTracksVisible = false;
 let navigationEnabled = false;
@@ -124,6 +125,10 @@ let hazardFeatures = [];
 let searchControlElements = {};
 let mapMenuElements = {};
 let lastSearchAt = 0;
+let restaurantsVisible = false;
+let restaurantFeatures = [];
+let loadedRestaurantBounds = null;
+let restaurantAbortController = null;
 
 const HAZARD_MIN_ZOOM = 12;
 const OVERPASS_URLS = [
@@ -714,6 +719,13 @@ function closeMapMenu() {
   mapMenuElements.button.setAttribute('aria-expanded', 'false');
 }
 
+function closeSearchPanel() {
+  if (!searchControlElements.panel) return;
+  searchControlElements.panel.hidden = true;
+  searchControlElements.button.classList.remove('isActive');
+  searchControlElements.button.setAttribute('aria-expanded', 'false');
+}
+
 function renderSearchResults(results) {
   const list = searchControlElements.results;
   list.replaceChildren();
@@ -738,10 +750,7 @@ function renderSearchResults(results) {
       } else map.setView([lat, lon], 13);
       list.replaceChildren();
       setSearchMessage('');
-      searchControlElements.panel.hidden = true;
-      mapModeButtons.search.classList.remove('isActive');
-      mapModeButtons.search.setAttribute('aria-expanded', 'false');
-      closeMapMenu();
+      closeSearchPanel();
     });
     list.appendChild(button);
   });
@@ -780,6 +789,155 @@ async function searchMap() {
   }
 }
 
+function restaurantType(tags) {
+  return {
+    restaurant: 'Restaurant',
+    cafe: 'Café',
+    pub: 'Pub',
+    biergarten: 'Biergarten',
+    fast_food: 'Imbiss'
+  }[tags.amenity] || 'Gastronomie';
+}
+
+function restaurantPopup(feature) {
+  const tags = feature.tags;
+  const address = [tags['addr:street'], tags['addr:housenumber'],
+    tags['addr:postcode'], tags['addr:city']].filter(Boolean).join(' ');
+  const details = [
+    `Art: ${restaurantType(tags)}`,
+    address && `Adresse: ${address}`,
+    tags.opening_hours && `Öffnungszeiten: ${tags.opening_hours}`,
+    tags.phone && `Telefon: ${tags.phone}`
+  ].filter(Boolean).map(escapeHtml);
+  let website = '';
+  try {
+    const url = new URL(tags.website || '');
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      website = `<br><a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">Website</a>`;
+    }
+  } catch (error) {
+    /* Ungültige oder fehlende URL wird nicht angezeigt. */
+  }
+  return `<strong>${escapeHtml(tags.name || restaurantType(tags))}</strong>` +
+    `<br>${details.join('<br>')}${website}` +
+    '<br><button type="button" class="navigateRestaurantBtn">🧭 Dorthin navigieren</button>' +
+    '<br><small>OSM-Nähe zu einem Gewässer; Erreichbarkeit nicht garantiert.</small>';
+}
+
+function navigateToRestaurant(feature) {
+  setNavigationEnabled(true);
+  navigationLayer.clearLayers();
+  navigationTarget = feature.latLng;
+  L.marker(navigationTarget)
+    .addTo(navigationLayer)
+    .bindPopup('Navigationsziel');
+  navigationControlElements.start.disabled = false;
+  navigationControlElements.stop.hidden = true;
+  setNavigationMessage('Gaststätte als Ziel gewählt');
+  startWaterNavigation();
+}
+
+function renderRestaurants() {
+  restaurantsLayer.clearLayers();
+  if (!restaurantsVisible) return;
+  const visibleBounds = map.getBounds().pad(0.05);
+  restaurantFeatures
+    .filter(feature => visibleBounds.contains(feature.latLng))
+    .slice(0, 100)
+    .forEach(feature => {
+      const icon = L.divIcon({
+        className: 'restaurantIconWrapper',
+        html: '<span class="restaurantIcon" aria-hidden="true">🍽</span>',
+        iconSize: [34, 34],
+        iconAnchor: [17, 17]
+      });
+      const restaurantMarker = L.marker(feature.latLng, { icon, pane: 'hazardPane' })
+        .bindPopup(restaurantPopup(feature))
+        .addTo(restaurantsLayer);
+      restaurantMarker.on('popupopen', event => {
+        const button = event.popup.getElement()?.querySelector('.navigateRestaurantBtn');
+        if (button) button.onclick = () => navigateToRestaurant(feature);
+      });
+    });
+}
+
+function setRestaurantMessage(message, isError = false) {
+  const status = searchControlElements.restaurantStatus;
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle('isError', isError);
+}
+
+async function loadWaterRestaurants() {
+  if (map.getZoom() < HAZARD_MIN_ZOOM) {
+    setRestaurantMessage(`Gaststätten ab Zoom ${HAZARD_MIN_ZOOM} laden.`, true);
+    return;
+  }
+  restaurantsVisible = true;
+  const visibleBounds = map.getBounds();
+  if (loadedRestaurantBounds?.contains(visibleBounds)) {
+    renderRestaurants();
+    setRestaurantMessage(`${restaurantFeatures.length} Gaststätten im geladenen Bereich`);
+    return;
+  }
+
+  const requestBounds = paddedMapBounds();
+  const bbox = [requestBounds.getSouth(), requestBounds.getWest(),
+    requestBounds.getNorth(), requestBounds.getEast()]
+    .map(value => value.toFixed(6)).join(',');
+  const query = `[out:json][timeout:25];
+    (way["waterway"~"^(river|riverbank|stream|canal|drain)$"](${bbox});
+     way["natural"="water"](${bbox});)->.water;
+    (node(around.water:150)["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
+     way(around.water:150)["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox}););
+    out center tags 100;`;
+
+  restaurantAbortController?.abort();
+  restaurantAbortController = new AbortController();
+  setRestaurantMessage('Gaststätten am Wasser werden geladen …');
+  try {
+    let response;
+    for (const url of OVERPASS_URLS) {
+      response = await fetch(url, {
+        method: 'POST',
+        body: new URLSearchParams({ data: query }),
+        signal: restaurantAbortController.signal
+      });
+      if (response.ok) break;
+    }
+    if (!response?.ok) throw new Error(`Overpass-HTTP ${response?.status || 0}`);
+    const data = await response.json();
+    const seen = new Set();
+    const rawRestaurants = (data.elements || []).flatMap(element => {
+      const latLng = hazardLatLng(element);
+      const key = `${element.type}/${element.id}`;
+      if (!latLng || seen.has(key)) return [];
+      seen.add(key);
+      return [{ latLng, tags: element.tags || {} }];
+    });
+    restaurantFeatures = rawRestaurants.filter((feature, index, features) =>
+      !features.slice(0, index).some(other =>
+        other.tags.amenity === feature.tags.amenity &&
+        (other.tags.name || '') === (feature.tags.name || '') &&
+        other.latLng.distanceTo(feature.latLng) < 15
+      )
+    );
+    loadedRestaurantBounds = requestBounds;
+    renderRestaurants();
+    setRestaurantMessage(`${restaurantFeatures.length} Gaststätten am Wasser gefunden`);
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    console.error('Gaststätten konnten nicht geladen werden:', error);
+    setRestaurantMessage('Gaststätten derzeit nicht verfügbar.', true);
+  }
+}
+
+function clearRestaurants() {
+  restaurantsVisible = false;
+  restaurantsLayer.clearLayers();
+  setRestaurantMessage('Gaststätten ausgeblendet');
+}
+
 function addMapToolsControl() {
   const control = L.control({ position: 'topright' });
   control.onAdd = () => {
@@ -799,6 +957,7 @@ function addMapToolsControl() {
 
     mapMenuElements = { button: menuButton, panel: container };
     L.DomEvent.on(menuButton, 'click', () => {
+      if (container.hidden) closeSearchPanel();
       container.hidden = !container.hidden;
       menuButton.classList.toggle('isActive', !container.hidden);
       menuButton.setAttribute('aria-expanded', String(!container.hidden));
@@ -822,56 +981,11 @@ function addMapToolsControl() {
       container.appendChild(button);
     });
 
-    const searchButton = document.createElement('button');
-    searchButton.type = 'button';
-    searchButton.textContent = '🔍 Suche';
-    searchButton.setAttribute('aria-expanded', 'false');
-    mapModeButtons.search = searchButton;
-    container.appendChild(searchButton);
-
     const hazardStatus = document.createElement('div');
     hazardStatus.className = 'mapToolStatus';
     hazardStatus.hidden = true;
     container.appendChild(hazardStatus);
-
-    const searchPanel = document.createElement('div');
-    searchPanel.className = 'searchPanel';
-    searchPanel.hidden = true;
-    const searchRow = document.createElement('div');
-    searchRow.className = 'searchRow';
-    const searchInput = document.createElement('input');
-    searchInput.type = 'search';
-    searchInput.placeholder = 'Ort, Fluss oder Gewässer';
-    searchInput.setAttribute('aria-label', 'Kartensuche');
-    const searchSubmit = document.createElement('button');
-    searchSubmit.type = 'button';
-    searchSubmit.textContent = 'Suchen';
-    const searchStatus = document.createElement('div');
-    searchStatus.className = 'searchStatus';
-    const searchResults = document.createElement('div');
-    searchResults.className = 'searchResults';
-    searchRow.append(searchInput, searchSubmit);
-    searchPanel.append(searchRow, searchStatus, searchResults);
-    container.appendChild(searchPanel);
-
-    searchControlElements = {
-      panel: searchPanel,
-      input: searchInput,
-      submit: searchSubmit,
-      searchStatus,
-      results: searchResults,
-      hazardStatus
-    };
-    L.DomEvent.on(searchButton, 'click', () => {
-      searchPanel.hidden = !searchPanel.hidden;
-      searchButton.classList.toggle('isActive', !searchPanel.hidden);
-      searchButton.setAttribute('aria-expanded', String(!searchPanel.hidden));
-      if (!searchPanel.hidden) searchInput.focus();
-    });
-    L.DomEvent.on(searchSubmit, 'click', searchMap);
-    L.DomEvent.on(searchInput, 'keydown', event => {
-      if (event.key === 'Enter') searchMap();
-    });
+    searchControlElements.hazardStatus = hazardStatus;
 
     const panel = document.createElement('div');
     panel.className = 'navigationPanel';
@@ -908,10 +1022,86 @@ function addMapToolsControl() {
   control.addTo(map);
 }
 
+function addSearchControl() {
+  const control = L.control({ position: 'topleft' });
+  control.onAdd = () => {
+    const wrapper = L.DomUtil.create('div', 'mapSearchControl');
+    const searchButton = document.createElement('button');
+    searchButton.type = 'button';
+    searchButton.className = 'mapSearchButton';
+    searchButton.textContent = '🔍';
+    searchButton.setAttribute('aria-label', 'Kartensuche öffnen');
+    searchButton.setAttribute('aria-expanded', 'false');
+
+    const searchPanel = document.createElement('div');
+    searchPanel.className = 'searchPanel';
+    searchPanel.hidden = true;
+    const searchRow = document.createElement('div');
+    searchRow.className = 'searchRow';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.placeholder = 'Ort, Fluss oder Gewässer';
+    searchInput.setAttribute('aria-label', 'Kartensuche');
+    const searchSubmit = document.createElement('button');
+    searchSubmit.type = 'button';
+    searchSubmit.textContent = 'Suchen';
+    const restaurantActions = document.createElement('div');
+    restaurantActions.className = 'restaurantActions';
+    const restaurantLoad = document.createElement('button');
+    restaurantLoad.type = 'button';
+    restaurantLoad.textContent = '🍽 Gaststätten am Wasser';
+    const restaurantClear = document.createElement('button');
+    restaurantClear.type = 'button';
+    restaurantClear.textContent = 'Ausblenden';
+    restaurantActions.append(restaurantLoad, restaurantClear);
+    const searchStatus = document.createElement('div');
+    searchStatus.className = 'searchStatus';
+    const restaurantStatus = document.createElement('div');
+    restaurantStatus.className = 'restaurantStatus';
+    const searchResults = document.createElement('div');
+    searchResults.className = 'searchResults';
+    searchRow.append(searchInput, searchSubmit);
+    searchPanel.append(searchRow, restaurantActions, searchStatus,
+      restaurantStatus, searchResults);
+    wrapper.append(searchButton, searchPanel);
+
+    searchControlElements = {
+      ...searchControlElements,
+      button: searchButton,
+      panel: searchPanel,
+      input: searchInput,
+      submit: searchSubmit,
+      searchStatus,
+      restaurantStatus,
+      results: searchResults
+    };
+    L.DomEvent.on(searchButton, 'click', () => {
+      if (searchPanel.hidden) closeMapMenu();
+      searchPanel.hidden = !searchPanel.hidden;
+      searchButton.classList.toggle('isActive', !searchPanel.hidden);
+      searchButton.setAttribute('aria-expanded', String(!searchPanel.hidden));
+      if (!searchPanel.hidden) searchInput.focus();
+    });
+    L.DomEvent.on(searchSubmit, 'click', searchMap);
+    L.DomEvent.on(restaurantLoad, 'click', loadWaterRestaurants);
+    L.DomEvent.on(restaurantClear, 'click', clearRestaurants);
+    L.DomEvent.on(searchInput, 'keydown', event => {
+      if (event.key === 'Enter') searchMap();
+    });
+    L.DomEvent.disableClickPropagation(wrapper);
+    L.DomEvent.disableScrollPropagation(wrapper);
+    return wrapper;
+  };
+  control.addTo(map);
+}
+
 addMapToolsControl();
+addSearchControl();
 map.on('click', chooseNavigationTarget);
 map.on('click', closeMapMenu);
+map.on('click', closeSearchPanel);
 map.on('moveend zoomend', scheduleHazardLoad);
+map.on('moveend zoomend', renderRestaurants);
 const initialOverlays = savedMapOverlays();
 if (initialOverlays.seamark) seamark.addTo(map);
 previousTracksVisible = Boolean(initialOverlays.previousTracks);
