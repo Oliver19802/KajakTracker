@@ -1,0 +1,9 @@
+{
+  "name": "KajakTracker",
+  "short_name": "KajakTracker",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#56a8b3",
+  "lang": "de"
+}
