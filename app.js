@@ -1,15 +1,14 @@
-// ============================================================
-// KajakTracker
-// GPS-Tracker für Kajakfahrten
-// ============================================================
+/* =========================================================
+   KajakTracker
+   ========================================================= */
 
-// ------------------------------------------------------------
-// Karte initialisieren
-// ------------------------------------------------------------
+
+/* ---------------------------------------------------------
+   Karte
+   --------------------------------------------------------- */
 
 const map = L.map('map', {
-  zoomControl: false,
-  attributionControl: true
+  zoomControl: false
 }).setView([52.5, 10.0], 8);
 
 L.control.zoom({
@@ -17,11 +16,9 @@ L.control.zoom({
 }).addTo(map);
 
 
-// ------------------------------------------------------------
-// OpenStreetMap
-// ------------------------------------------------------------
+/* OpenStreetMap */
 
-const osm = L.tileLayer(
+L.tileLayer(
   'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   {
     maxZoom: 19,
@@ -30,11 +27,9 @@ const osm = L.tileLayer(
 ).addTo(map);
 
 
-// ------------------------------------------------------------
-// OpenSeaMap
-// ------------------------------------------------------------
+/* OpenSeaMap */
 
-const seamark = L.tileLayer(
+L.tileLayer(
   'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
   {
     maxZoom: 18,
@@ -44,31 +39,9 @@ const seamark = L.tileLayer(
 ).addTo(map);
 
 
-// ------------------------------------------------------------
-// Karten-Größe korrigieren
-// ------------------------------------------------------------
-
-// Wichtig für iPhone / Safari / Flexbox.
-// Leaflet muss wissen, wie groß der Kartenbereich
-// tatsächlich nach dem Laden ist.
-
-function resizeMap() {
-  setTimeout(() => {
-    map.invalidateSize(true);
-  }, 100);
-}
-
-window.addEventListener('load', resizeMap);
-window.addEventListener('resize', resizeMap);
-
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', resizeMap);
-}
-
-
-// ------------------------------------------------------------
-// Variablen
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Variablen
+   --------------------------------------------------------- */
 
 let watchId = null;
 let timerId = null;
@@ -88,59 +61,49 @@ let currentSpeed = 0;
 
 let marker = null;
 
-
-// ------------------------------------------------------------
-// Track-Linie
-// ------------------------------------------------------------
-
 let line = L.polyline([], {
   color: '#147aa1',
-  weight: 5,
-  opacity: 0.9
+  weight: 5
 }).addTo(map);
 
 
-// ------------------------------------------------------------
-// Hilfsfunktionen
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Hilfsfunktionen
+   --------------------------------------------------------- */
 
 const $ = id => document.getElementById(id);
 
 
-const fmt = n => {
-  return Number(n).toLocaleString('de-DE', {
+const fmt = n =>
+  n.toLocaleString('de-DE', {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1
   });
-};
 
 
-const fmtKm = m => {
-  return (Number(m) / 1000).toLocaleString('de-DE', {
+const fmtKm = m =>
+  (m / 1000).toLocaleString('de-DE', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
-};
 
 
-// ------------------------------------------------------------
-// Status
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Status
+   --------------------------------------------------------- */
 
 function setStatus(text, cls = 'idle') {
 
-  const status = $('status');
+  $('status').textContent = text;
 
-  if (!status) return;
-
-  status.textContent = text;
-  status.className = 'status ' + cls;
+  $('status').className =
+    'status ' + cls;
 }
 
 
-// ------------------------------------------------------------
-// Zeit
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Zeit
+   --------------------------------------------------------- */
 
 function elapsedSeconds() {
 
@@ -156,113 +119,94 @@ function elapsedSeconds() {
   return Math.max(
     0,
     Math.floor(
-      (end - startedAt - accumulatedPause) / 1000
+      (
+        end -
+        startedAt -
+        accumulatedPause
+      ) / 1000
     )
   );
 }
 
 
-// ------------------------------------------------------------
-// Timer formatieren
-// ------------------------------------------------------------
-
 function timerText(sec) {
 
   const h = Math.floor(sec / 3600);
 
-  const m = Math.floor(
-    (sec % 3600) / 60
-  );
+  const m =
+    Math.floor((sec % 3600) / 60);
 
   const s = sec % 60;
 
-  return [
-    h,
-    m,
-    s
-  ]
-    .map(v => String(v).padStart(2, '0'))
+  return [h, m, s]
+    .map(v =>
+      String(v).padStart(2, '0')
+    )
     .join(':');
 }
 
 
-// ------------------------------------------------------------
-// Benutzeroberfläche aktualisieren
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Anzeige aktualisieren
+   --------------------------------------------------------- */
 
 function updateUI() {
 
-  if ($('timer')) {
-    $('timer').textContent =
-      timerText(elapsedSeconds());
-  }
+  $('timer').textContent =
+    timerText(elapsedSeconds());
 
 
-  if ($('distance')) {
-    $('distance').textContent =
-      fmtKm(totalDistance) + ' km';
-  }
+  $('distance').textContent =
+    fmtKm(totalDistance) + ' km';
 
 
-  if ($('speed')) {
-    $('speed').textContent =
-      fmt(currentSpeed * 3.6) + ' km/h';
-  }
+  $('speed').textContent =
+    fmt(currentSpeed * 3.6) + ' km/h';
 
 
-  if ($('maxSpeed')) {
-    $('maxSpeed').textContent =
-      fmt(maxSpeed * 3.6) + ' km/h';
-  }
+  $('maxSpeed').textContent =
+    fmt(maxSpeed * 3.6) + ' km/h';
 
 
-  if ($('points')) {
-    $('points').textContent =
-      track.length;
-  }
+  $('points').textContent =
+    track.length;
 
 
   const t = elapsedSeconds();
 
 
-  if ($('avgSpeed')) {
-
-    $('avgSpeed').textContent =
-      t > 0
-        ? fmt((totalDistance / t) * 3.6) + ' km/h'
-        : '0,0 km/h';
-  }
+  $('average').textContent =
+    t > 0
+      ? fmt((totalDistance / t) * 3.6) + ' km/h'
+      : '0,0 km/h';
 }
 
 
-// ------------------------------------------------------------
-// Track zurücksetzen
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Strecke zurücksetzen
+   --------------------------------------------------------- */
 
 function resetTrack() {
 
   track = [];
 
   totalDistance = 0;
+
   maxSpeed = 0;
+
   currentSpeed = 0;
 
   lastPosition = null;
 
   line.setLatLngs([]);
 
-  if (marker) {
-    map.removeLayer(marker);
-    marker = null;
-  }
-
   updateUI();
 }
 
 
-// ------------------------------------------------------------
-// GPS starten
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   GPS starten
+   --------------------------------------------------------- */
 
 function startGPS() {
 
@@ -276,21 +220,22 @@ function startGPS() {
   }
 
 
-  watchId = navigator.geolocation.watchPosition(
-    onPosition,
-    onGeoError,
-    {
-      enableHighAccuracy: true,
-      maximumAge: 2000,
-      timeout: 15000
-    }
-  );
+  watchId =
+    navigator.geolocation.watchPosition(
+      onPosition,
+      onGeoError,
+      {
+        enableHighAccuracy: true,
+        maximumAge: 2000,
+        timeout: 15000
+      }
+    );
 }
 
 
-// ------------------------------------------------------------
-// GPS stoppen
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   GPS stoppen
+   --------------------------------------------------------- */
 
 function stopGPS() {
 
@@ -305,9 +250,9 @@ function stopGPS() {
 }
 
 
-// ------------------------------------------------------------
-// GPS Position
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Neue GPS Position
+   --------------------------------------------------------- */
 
 function onPosition(pos) {
 
@@ -321,44 +266,52 @@ function onPosition(pos) {
     pos.coords.accuracy || 999;
 
 
-  // Ungenaue GPS-Positionen ignorieren
+  /* Ungenaue Position ignorieren */
+
   if (acc > 40) {
     return;
   }
 
 
-  // Geschwindigkeit
-  currentSpeed = Math.max(
-    0,
-    pos.coords.speed || 0
-  );
+  currentSpeed =
+    Math.max(
+      0,
+      pos.coords.speed || 0
+    );
 
 
-  // ----------------------------------------------------------
-  // Während der Aufzeichnung
-  // ----------------------------------------------------------
+  /* -------------------------------------------------------
+     Nur während der Aufzeichnung Strecke speichern
+     ------------------------------------------------------- */
 
   if (state === 'recording') {
 
     if (lastPosition) {
 
-      const p1 = L.latLng(
-        lastPosition[0],
-        lastPosition[1]
-      );
+      const p1 =
+        L.latLng(
+          lastPosition[0],
+          lastPosition[1]
+        );
 
-      const p2 = L.latLng(
-        c[0],
-        c[1]
-      );
+
+      const p2 =
+        L.latLng(
+          c[0],
+          c[1]
+        );
 
 
       const d =
         p1.distanceTo(p2);
 
 
-      // Nur sinnvolle GPS-Bewegungen übernehmen
-      if (d >= 2 && d < 100) {
+      /* GPS-Sprünge vermeiden */
+
+      if (
+        d >= 2 &&
+        d < 100
+      ) {
 
         totalDistance += d;
 
@@ -376,7 +329,6 @@ function onPosition(pos) {
 
     } else {
 
-      // Erster Punkt
       track.push({
         lat: c[0],
         lon: c[1],
@@ -389,25 +341,26 @@ function onPosition(pos) {
     }
 
 
-    // Höchstgeschwindigkeit
-    maxSpeed = Math.max(
-      maxSpeed,
-      currentSpeed
-    );
+    maxSpeed =
+      Math.max(
+        maxSpeed,
+        currentSpeed
+      );
   }
 
 
-  // Letzte Position speichern
   lastPosition = c;
 
 
-  // ----------------------------------------------------------
-  // Positionsmarker
-  // ----------------------------------------------------------
+  /* -------------------------------------------------------
+     Positionsmarker
+     ------------------------------------------------------- */
 
   if (!marker) {
 
-    marker = L.marker(c).addTo(map);
+    marker =
+      L.marker(c)
+        .addTo(map);
 
   } else {
 
@@ -415,7 +368,8 @@ function onPosition(pos) {
   }
 
 
-  // Karte auf aktuelle Position bewegen
+  /* Karte auf Position zentrieren */
+
   map.setView(
     c,
     Math.max(map.getZoom(), 15),
@@ -429,53 +383,36 @@ function onPosition(pos) {
 }
 
 
-// ------------------------------------------------------------
-// GPS Fehler
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   GPS Fehler
+   --------------------------------------------------------- */
 
 function onGeoError(err) {
 
-  console.log(
-    'GPS Fehler:',
-    err
-  );
+  console.log(err);
 
 
   if (err.code === 1) {
 
     alert(
-      'Standortzugriff wurde verweigert. ' +
-      'Bitte in den iPhone-Einstellungen den Standort ' +
-      'für Safari erlauben.'
-    );
-  }
-
-  else if (err.code === 2) {
-
-    console.log(
-      'Position konnte nicht ermittelt werden.'
-    );
-  }
-
-  else if (err.code === 3) {
-
-    console.log(
-      'Zeitüberschreitung bei der GPS-Abfrage.'
+      'Standortzugriff wurde verweigert. Bitte in den iPhone-Einstellungen den Standort für Safari erlauben.'
     );
   }
 }
 
 
-// ------------------------------------------------------------
-// Fahrt starten
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   START
+   --------------------------------------------------------- */
 
 function start() {
 
   resetTrack();
 
 
-  startedAt = Date.now();
+  startedAt =
+    Date.now();
+
 
   pausedAt = null;
 
@@ -490,54 +427,36 @@ function start() {
   );
 
 
-  if ($('startBtn')) {
-    $('startBtn').disabled = true;
-  }
+  $('startBtn').disabled = true;
 
+  $('pauseBtn').disabled = false;
 
-  if ($('pauseBtn')) {
-    $('pauseBtn').disabled = false;
-  }
-
-
-  if ($('stopBtn')) {
-    $('stopBtn').disabled = false;
-  }
+  $('stopBtn').disabled = false;
 
 
   startGPS();
 
 
-  if (timerId) {
-    clearInterval(timerId);
-  }
-
-
-  timerId = setInterval(
-    updateUI,
-    500
-  );
-
-
-  resizeMap();
+  timerId =
+    setInterval(
+      updateUI,
+      500
+    );
 }
 
 
-// ------------------------------------------------------------
-// Pause / Weiter
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   PAUSE / WEITER
+   --------------------------------------------------------- */
 
 function pause() {
-
-  // ----------------------------------------------------------
-  // Aufzeichnung pausieren
-  // ----------------------------------------------------------
 
   if (state === 'recording') {
 
     state = 'paused';
 
-    pausedAt = Date.now();
+    pausedAt =
+      Date.now();
 
     currentSpeed = 0;
 
@@ -548,25 +467,19 @@ function pause() {
     );
 
 
-    if ($('pauseBtn')) {
-
-      $('pauseBtn').textContent =
-        '▶ Weiter';
-    }
+    $('pauseBtn').textContent =
+      '▶ Weiter';
 
 
     stopGPS();
+
   }
-
-
-  // ----------------------------------------------------------
-  // Aufzeichnung fortsetzen
-  // ----------------------------------------------------------
 
   else if (state === 'paused') {
 
     accumulatedPause +=
-      Date.now() - pausedAt;
+      Date.now() -
+      pausedAt;
 
 
     pausedAt = null;
@@ -580,11 +493,8 @@ function pause() {
     );
 
 
-    if ($('pauseBtn')) {
-
-      $('pauseBtn').textContent =
-        'Ⅱ Pause';
-    }
+    $('pauseBtn').textContent =
+      'Ⅱ Pause';
 
 
     startGPS();
@@ -595,18 +505,17 @@ function pause() {
 }
 
 
-// ------------------------------------------------------------
-// Fahrt stoppen
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   STOP
+   --------------------------------------------------------- */
 
 function stop() {
 
-  if (state === 'paused' && pausedAt) {
+  if (state === 'paused') {
 
     accumulatedPause +=
-      Date.now() - pausedAt;
-
-    pausedAt = null;
+      Date.now() -
+      pausedAt;
   }
 
 
@@ -632,31 +541,27 @@ function stop() {
   );
 
 
-  if ($('startBtn')) {
-    $('startBtn').disabled = false;
-  }
+  $('startBtn').disabled = false;
+
+  $('pauseBtn').disabled = true;
+
+  $('stopBtn').disabled = true;
 
 
-  if ($('pauseBtn')) {
-    $('pauseBtn').disabled = true;
-    $('pauseBtn').textContent = 'Ⅱ Pause';
-  }
-
-
-  if ($('stopBtn')) {
-    $('stopBtn').disabled = true;
-  }
+  $('pauseBtn').textContent =
+    'Ⅱ Pause';
 
 
   saveTrip();
+
 
   updateUI();
 }
 
 
-// ------------------------------------------------------------
-// Fahrt speichern
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Fahrt speichern
+   --------------------------------------------------------- */
 
 function saveTrip() {
 
@@ -665,37 +570,30 @@ function saveTrip() {
   }
 
 
-  let trips = [];
-
-
-  try {
-
-    trips = JSON.parse(
-      localStorage.getItem('kajakTrips') || '[]'
+  const trips =
+    JSON.parse(
+      localStorage.getItem(
+        'kajakTrips'
+      ) || '[]'
     );
-
-  } catch (e) {
-
-    console.log(
-      'Fehler beim Lesen der gespeicherten Fahrten:',
-      e
-    );
-
-    trips = [];
-  }
 
 
   trips.unshift({
 
-    date: new Date().toISOString(),
+    date:
+      new Date().toISOString(),
 
-    duration: elapsedSeconds(),
+    duration:
+      elapsedSeconds(),
 
-    distance: totalDistance,
+    distance:
+      totalDistance,
 
-    maxSpeed: maxSpeed,
+    maxSpeed:
+      maxSpeed,
 
-    track: track
+    track:
+      track
 
   });
 
@@ -709,9 +607,9 @@ function saveTrip() {
 }
 
 
-// ------------------------------------------------------------
-// GPX Export
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   GPX Export
+   --------------------------------------------------------- */
 
 function exportGPX() {
 
@@ -732,44 +630,42 @@ function exportGPX() {
       .replace(/>/g, '&gt;');
 
 
-  const points = track
-    .map(p => {
-
-      return `
-<trkpt lat="${p.lat}" lon="${p.lon}">
-  <time>${esc(p.time)}</time>
-</trkpt>`;
-
-    })
-    .join('');
+  const points =
+    track
+      .map(p =>
+        `<trkpt lat="${p.lat}" lon="${p.lon}">
+          <time>${esc(p.time)}</time>
+        </trkpt>`
+      )
+      .join('');
 
 
-  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+  const gpx =
+`<?xml version="1.0" encoding="UTF-8"?>
 <gpx
   version="1.1"
   creator="KajakTracker"
   xmlns="http://www.topografix.com/GPX/1/1">
 
-<trk>
-  <name>Kajakfahrt ${esc(
-    new Date().toLocaleString('de-DE')
-  )}</name>
+  <trk>
+    <name>Kajakfahrt ${new Date().toLocaleString('de-DE')}</name>
 
-  <trkseg>
-    ${points}
-  </trkseg>
+    <trkseg>
+      ${points}
+    </trkseg>
 
-</trk>
+  </trk>
 
 </gpx>`;
 
 
-  const blob = new Blob(
-    [gpx],
-    {
-      type: 'application/gpx+xml'
-    }
-  );
+  const blob =
+    new Blob(
+      [gpx],
+      {
+        type: 'application/gpx+xml'
+      }
+    );
 
 
   const url =
@@ -793,45 +689,35 @@ function exportGPX() {
   document.body.removeChild(a);
 
 
-  setTimeout(() => {
-
-    URL.revokeObjectURL(url);
-
-  }, 1000);
+  setTimeout(
+    () => URL.revokeObjectURL(url),
+    1000
+  );
 }
 
 
-// ------------------------------------------------------------
-// Event-Handler
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Buttons
+   --------------------------------------------------------- */
 
-if ($('startBtn')) {
-
-  $('startBtn').onclick = start;
-}
+$('startBtn').onclick =
+  start;
 
 
-if ($('pauseBtn')) {
-
-  $('pauseBtn').onclick = pause;
-}
+$('pauseBtn').onclick =
+  pause;
 
 
-if ($('stopBtn')) {
-
-  $('stopBtn').onclick = stop;
-}
+$('stopBtn').onclick =
+  stop;
 
 
-if ($('exportBtn')) {
-
-  $('exportBtn').onclick = exportGPX;
-}
+$('gpxBtn').onclick =
+  exportGPX;
 
 
-if ($('locateBtn')) {
-
-  $('locateBtn').onclick = () => {
+$('locationBtn').onclick =
+  () => {
 
     if (lastPosition) {
 
@@ -851,14 +737,15 @@ if ($('locateBtn')) {
       );
     }
   };
-}
 
 
-// ------------------------------------------------------------
-// Service Worker
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Service Worker
+   --------------------------------------------------------- */
 
-if ('serviceWorker' in navigator) {
+if (
+  'serviceWorker' in navigator
+) {
 
   window.addEventListener(
     'load',
@@ -866,44 +753,28 @@ if ('serviceWorker' in navigator) {
 
       navigator.serviceWorker
         .register('sw.js')
-        .then(() => {
-
-          console.log(
-            'Service Worker registriert'
-          );
-
-        })
-        .catch(err => {
-
-          console.log(
-            'Service Worker Fehler:',
-            err
-          );
-        });
+        .catch(
+          err =>
+            console.log(
+              'Service Worker Fehler:',
+              err
+            )
+        );
     }
   );
 }
 
 
-// ------------------------------------------------------------
-// Initialisierung
-// ------------------------------------------------------------
+/* ---------------------------------------------------------
+   Startanzeige
+   --------------------------------------------------------- */
 
 updateUI();
 
 
-// Leaflet nach dem ersten Rendern neu berechnen lassen
-setTimeout(() => {
+/* Leaflet nach dem Laden korrekt dimensionieren */
 
-  map.invalidateSize(true);
-
-}, 300);
-
-
-// Noch einmal nach kurzer Verzögerung,
-// wichtig insbesondere bei Safari/iPhone
-setTimeout(() => {
-
-  map.invalidateSize(true);
-
-}, 1000);
+setTimeout(
+  () => map.invalidateSize(),
+  300
+);
