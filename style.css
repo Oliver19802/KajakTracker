@@ -5,26 +5,15 @@
 :root {
   --teal: #56a8b3;
   --dark: #183f55;
-  --green: #3d9c58;
   --orange: #f59b19;
   --red: #f0443e;
-  --light: #eef4f5;
-  --border: #b9d6db;
 }
 
 html,
 body {
   margin: 0;
-  padding: 0;
-
-  min-height: 100%;
-
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #fff;
   color: var(--dark);
 }
@@ -33,20 +22,15 @@ body {
   padding-top: env(safe-area-inset-top);
 }
 
-/* -------------------------------- */
-/* HEADER */
-/* -------------------------------- */
+/* Kopfbereich */
 
 header {
   height: 76px;
-
   background: var(--teal);
   color: white;
-
   display: flex;
   align-items: center;
   justify-content: space-between;
-
   padding: 0 18px;
 }
 
@@ -57,17 +41,10 @@ header {
 
 .status {
   font-weight: 700;
-
   padding: 9px 13px;
-
   border-radius: 20px;
-
-  background: white;
+  background: #fff;
   color: #777;
-}
-
-.status.idle {
-  color: #39894a;
 }
 
 .status.recording {
@@ -78,74 +55,48 @@ header {
   color: #b27600;
 }
 
-/* -------------------------------- */
-/* HAUPTBEREICH */
-/* -------------------------------- */
+.status.idle {
+  color: #39894a;
+}
+
+/* Hauptbereich */
 
 main {
-  min-height: calc(100dvh - 76px);
-
+  height: calc(100dvh - 76px);
   display: flex;
   flex-direction: column;
 }
 
-/* -------------------------------- */
-/* KARTE */
-/* -------------------------------- */
+/* Karte */
 
 #map {
-  height: 58vh;
-  min-height: 420px;
-
-  width: 100%;
+  flex: 1;
+  min-height: 42vh;
 }
 
-/* -------------------------------- */
-/* BEDIENPANEL */
-/* -------------------------------- */
+/* Bedienfeld */
 
 .panel {
-  background: white;
-
-  padding:
-    12px
-    14px
-    calc(14px + env(safe-area-inset-bottom));
-
-  box-shadow:
-    0 -5px 20px rgba(0, 0, 0, .12);
-
+  background: #fff;
+  padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
+  box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.12);
   border-radius: 20px 20px 0 0;
-
-  position: relative;
-
-  z-index: 10;
 }
 
 .timer {
   text-align: center;
-
   font-size: 42px;
-
   font-weight: 800;
-
   letter-spacing: 1px;
-
   margin: 3px 0 8px;
 }
 
-/* -------------------------------- */
-/* STATISTIK */
-/* -------------------------------- */
+/* Statistik */
 
 .stats {
   display: grid;
-
-  grid-template-columns:
-    repeat(3, 1fr);
-
+  grid-template-columns: repeat(3, 1fr);
   gap: 9px;
-
   text-align: center;
 }
 
@@ -155,62 +106,43 @@ main {
 
 .stats span {
   display: block;
-
   font-size: 12px;
-
   color: #6496a0;
-
   font-weight: 700;
 }
 
 .stats strong {
   display: block;
-
   font-size: 18px;
-
   margin-top: 2px;
 }
 
-/* -------------------------------- */
-/* BUTTONS */
-/* -------------------------------- */
+/* Hauptbuttons */
 
 .buttons {
   display: grid;
-
-  grid-template-columns:
-    1fr 1fr 1fr;
-
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 9px;
-
   margin-top: 10px;
 }
 
 button {
   border: 0;
-
   border-radius: 13px;
-
   padding: 13px 8px;
-
   font-size: 16px;
-
   font-weight: 800;
-
   color: var(--dark);
-
-  background: var(--light);
-
-  -webkit-tap-highlight-color: transparent;
+  background: #eef4f5;
 }
 
 button:disabled {
-  opacity: .4;
+  opacity: 0.4;
 }
 
 button.primary {
-  background: var(--green);
-  color: white;
+  background: #3d9c58;
+  color: #fff;
 }
 
 button.pause {
@@ -220,226 +152,145 @@ button.pause {
 
 button.danger {
   background: var(--red);
-  color: white;
+  color: #fff;
 }
+
+/* Standort / GPX */
 
 .secondaryButtons {
   display: grid;
-
-  grid-template-columns:
-    1fr 1fr;
-
+  grid-template-columns: 1fr 1fr;
   gap: 9px;
-
   margin-top: 8px;
 }
 
 .secondaryButtons button {
   font-size: 14px;
-
-  background: white;
-
-  border: 1px solid var(--border);
+  background: #fff;
+  border: 1px solid #b9d6db;
 }
 
-/* -------------------------------- */
-/* FAHRTENVERWALTUNG */
-/* -------------------------------- */
+/* ================================
+   Sicherheitshinweis
+   ================================ */
+
+.legalNotice {
+  margin-top: 12px;
+  padding: 12px 13px;
+  background: #f4f8f9;
+  border: 1px solid #c8dde1;
+  border-radius: 13px;
+  color: #385b64;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.legalNotice p {
+  margin: 6px 0;
+}
+
+.legalTitle {
+  font-size: 13px;
+  font-weight: 800;
+  color: #183f55;
+  margin-bottom: 6px;
+}
+
+.privateUse {
+  margin-top: 9px !important;
+  padding-top: 8px;
+  border-top: 1px solid #c8dde1;
+  color: #183f55;
+}
+
+/* ================================
+   Fahrtenverwaltung
+   ================================ */
 
 .tripsPanel {
-  background: #f7fafb;
-
-  padding:
-    18px
-    14px
-    calc(25px + env(safe-area-inset-bottom));
-
-  border-top: 1px solid #dce9eb;
+  background: #fff;
+  padding: 14px;
 }
 
 .tripsHeader {
   display: flex;
-
   align-items: center;
-
   justify-content: space-between;
-
-  margin-bottom: 12px;
+  gap: 10px;
 }
 
 .tripsHeader h2 {
   margin: 0;
-
-  font-size: 22px;
-
-  color: var(--dark);
+  font-size: 20px;
+  font-weight: 800;
 }
 
 .clearTripsBtn {
-  background: white;
-
-  border: 1px solid #e2b0ae;
-
-  color: #c74640;
-
-  font-size: 12px;
-
-  padding: 9px 11px;
-
-  border-radius: 10px;
+  padding: 8px 11px;
+  font-size: 13px;
+  background: #fff;
+  border: 1px solid #e0b0ae;
+  color: #c03935;
 }
 
 .tripsList {
-  display: flex;
-
-  flex-direction: column;
-
-  gap: 10px;
-}
-
-.noTrips {
-  background: white;
-
-  border: 1px solid #dce9eb;
-
-  border-radius: 14px;
-
-  padding: 18px;
-
-  text-align: center;
-
-  color: #70909a;
-
-  font-size: 14px;
-}
-
-/* -------------------------------- */
-/* EINZELNE FAHRT */
-/* -------------------------------- */
-
-.tripCard {
-  background: white;
-
-  border: 1px solid #dce9eb;
-
-  border-radius: 15px;
-
-  padding: 14px;
-
-  box-shadow:
-    0 2px 8px rgba(0, 0, 0, .05);
-}
-
-.tripTop {
-  display: flex;
-
-  justify-content: space-between;
-
-  align-items: flex-start;
-
-  gap: 10px;
-}
-
-.tripTitle {
-  font-weight: 800;
-
-  font-size: 16px;
-
-  color: var(--dark);
-}
-
-.tripDate {
-  margin-top: 3px;
-
-  font-size: 12px;
-
-  color: #77949d;
-}
-
-.tripStats {
-  display: grid;
-
-  grid-template-columns:
-    repeat(3, 1fr);
-
-  gap: 6px;
-
-  margin-top: 12px;
-
-  text-align: center;
-}
-
-.tripStats div {
-  background: #f4f8f9;
-
-  border-radius: 9px;
-
-  padding: 8px 3px;
-}
-
-.tripStats span {
-  display: block;
-
-  font-size: 10px;
-
-  color: #71919a;
-
-  font-weight: 700;
-}
-
-.tripStats strong {
-  display: block;
-
-  margin-top: 2px;
-
-  font-size: 14px;
-}
-
-.tripActions {
-  display: grid;
-
-  grid-template-columns:
-    1fr 1fr 1fr;
-
-  gap: 7px;
-
   margin-top: 10px;
 }
 
-.tripActions button {
-  padding: 10px 5px;
-
-  font-size: 12px;
-
-  border-radius: 10px;
+.noTrips {
+  text-align: center;
+  padding: 15px 10px;
+  color: #7a999f;
+  font-size: 14px;
 }
 
-.viewTripBtn {
-  background: #e8f4f6;
+/* Einzelne Fahrt */
+
+.tripCard {
+  background: #f4f8f9;
+  border: 1px solid #c8dde1;
+  border-radius: 13px;
+  padding: 12px;
+  margin-bottom: 9px;
+}
+
+.tripCard strong {
   color: var(--dark);
 }
 
-.exportTripBtn {
-  background: #eef6ef;
-  color: #39894a;
+.tripCard .tripDate {
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 6px;
 }
 
-.deleteTripBtn {
-  background: #fff0f0;
-  color: #c74640;
+.tripCard .tripStats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+  font-size: 12px;
+  color: #5f8189;
 }
 
-/* -------------------------------- */
-/* LEAFLET */
-/* -------------------------------- */
+.tripCard .tripButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.tripCard button {
+  padding: 9px 7px;
+  font-size: 13px;
+}
+
+/* Karten-Attribution */
 
 .leaflet-control-attribution {
   font-size: 8px;
 }
 
-/* -------------------------------- */
-/* KLEINE DISPLAYS */
-/* -------------------------------- */
+/* Kleine iPhones */
 
 @media (max-width: 380px) {
 
@@ -455,21 +306,11 @@ button.danger {
     font-size: 14px;
   }
 
-  #map {
-    height: 52vh;
-    min-height: 380px;
+  .tripsHeader h2 {
+    font-size: 18px;
   }
 
-}
-
-/* -------------------------------- */
-/* IPHONE / TOUCH */
-/* -------------------------------- */
-
-@media (pointer: coarse) {
-
-  button {
-    min-height: 44px;
+  .legalNotice {
+    font-size: 10px;
   }
-
 }
