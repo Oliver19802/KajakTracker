@@ -1,6 +1,9 @@
-param([int]$Port = 8765)
+param(
+  [int]$Port = 8765,
+  [string]$RootPath = $PSScriptRoot
+)
 
-$root = (Resolve-Path $PSScriptRoot).Path
+$root = (Resolve-Path $RootPath).Path
 $server = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
 $server.Start()
 Write-Host "Offline test server: http://127.0.0.1:$Port/"

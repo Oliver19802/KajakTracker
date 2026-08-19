@@ -74,6 +74,14 @@ main {
   min-height: 42vh;
 }
 
+.offlineMapLibreLayer {
+  position: absolute;
+  z-index: 100;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /* Bedienfeld */
 
 .panel {
@@ -365,6 +373,109 @@ button.danger {
 .mapToolsControl button.isActive {
   background: var(--teal);
   color: white;
+}
+
+.offlineMapPanel {
+  display: grid;
+  gap: 7px;
+  max-width: 100%;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: #f7fbfb;
+  color: var(--dark);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.offlineMapPanel[hidden],
+.offlineMapPanel [hidden] {
+  display: none !important;
+}
+
+.offlineMapPanel > strong {
+  font-size: 15px;
+}
+
+.offlineMapPanel small {
+  display: block;
+  color: #5f8189;
+  line-height: 1.35;
+}
+
+.offlineModeActions,
+.offlineDataActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.offlineMapPanel button {
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px;
+  border: 1px solid #c8dde1;
+  background: #fff;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.offlineMapPanel button.isActive {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #fff;
+}
+
+.offlineAvailable {
+  font-weight: 800;
+  color: #39894a;
+}
+
+.offlineStatus {
+  min-height: 18px;
+  color: #356d75;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.offlineStatus.isError {
+  color: #bd3934;
+}
+
+.mapMessageToast {
+  position: fixed;
+  z-index: 1200;
+  top: calc(84px + env(safe-area-inset-top));
+  left: 50%;
+  width: min(360px, calc(100vw - 24px));
+  padding: 10px 12px;
+  transform: translateX(-50%);
+  border-radius: 12px;
+  background: #183f55;
+  color: white;
+  box-shadow: 0 3px 15px rgba(0, 0, 0, .25);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.mapMessageToast.isError {
+  background: #9d302d;
+}
+
+.mapMessageToast[hidden] {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .mapToolsControl {
+    width: min(300px, calc(100vw - 72px));
+    max-height: calc(100dvh - 150px);
+  }
+
+  .offlineMapPanel {
+    padding: 9px;
+  }
 }
 
 .mapToolsControl > button.isActive::after {

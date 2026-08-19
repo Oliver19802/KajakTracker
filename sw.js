@@ -1,11 +1,24 @@
-const CACHE = 'kajaktracker-v13';
+const CACHE = 'kajaktracker-v14';
 
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
-  './manifest.json'
+  './offline-map.js',
+  './manifest.json',
+  './vendor/leaflet/leaflet.css',
+  './vendor/leaflet/leaflet.js',
+  './vendor/leaflet/images/layers.png',
+  './vendor/leaflet/images/layers-2x.png',
+  './vendor/leaflet/images/marker-icon.png',
+  './vendor/leaflet/images/marker-icon-2x.png',
+  './vendor/leaflet/images/marker-shadow.png',
+  './offline-test/vendor/maplibre-gl.css',
+  './offline-test/vendor/maplibre-gl.js',
+  './offline-test/vendor/pmtiles.js',
+  './offline-test/vendor/fonts/Open Sans Semibold/0-255.pbf',
+  './offline-test/vendor/fonts/Open Sans Semibold/256-511.pbf'
 ];
 
 self.addEventListener('install', event => {
@@ -54,7 +67,8 @@ self.addEventListener('fetch', event => {
       !requestUrl.pathname.startsWith(scopeUrl.pathname)) return;
 
   const relativePath = requestUrl.pathname.slice(scopeUrl.pathname.length);
-  const isCoreFile = ['index.html', 'app.js', 'style.css', 'manifest.json']
+  const isCoreFile = ASSETS
+    .map(path => path === './' ? '' : path.replace(/^\.\//, ''))
     .includes(relativePath);
   const isNavigation = event.request.mode === 'navigate';
   if (!isCoreFile && !isNavigation) return;

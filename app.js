@@ -27,7 +27,9 @@ const osm = L.tileLayer(
     attribution:
       '&copy; OpenStreetMap contributors'
   }
-).addTo(map);
+);
+
+if (navigator.onLine) osm.addTo(map);
 
 
 /* OpenSeaMap */
@@ -163,6 +165,12 @@ const $ = id =>
    ========================================================= */
 
 let mapModeButtons = {};
+
+const offlineMapManager = window.createOfflineMapManager({
+  map,
+  onlineLayer: osm,
+  mapModeButtons
+});
 
 
 function setMapMode(mode, save = true) {
@@ -370,6 +378,10 @@ function setToolButton(name, active) {
 }
 
 function toggleSeamark() {
+  if (!navigator.onLine && !map.hasLayer(seamark)) {
+    window.showMapMessage('OpenSeaMap benötigt eine Internetverbindung.', true);
+    return;
+  }
   if (map.hasLayer(seamark)) map.removeLayer(seamark);
   else seamark.addTo(map);
   setToolButton('seamark', map.hasLayer(seamark));
@@ -442,6 +454,10 @@ function routeDistanceMeters(coordinates) {
 }
 
 async function startWaterNavigation() {
+  if (!navigator.onLine) {
+    setNavigationMessage('Navigation benötigt eine Internetverbindung.', true);
+    return;
+  }
   if (!navigationTarget) return;
 
   const routeFrom = lastPosition || (marker && marker.getLatLng());
@@ -626,6 +642,10 @@ async function loadHazards() {
     }
     return;
   }
+  if (!navigator.onLine) {
+    setHazardMessage('Schleusen/Wehre benötigen eine Internetverbindung.', true);
+    return;
+  }
 
   const visibleBounds = map.getBounds();
   if (loadedHazardBounds?.contains(visibleBounds)) {
@@ -769,6 +789,10 @@ function renderSearchResults(results) {
 }
 
 async function searchMap() {
+  if (!navigator.onLine) {
+    setSearchMessage('Ortssuche benötigt eine Internetverbindung.', true);
+    return;
+  }
   const query = searchControlElements.input.value.trim();
   if (query.length < 2) {
     setSearchMessage('Bitte mindestens 2 Zeichen eingeben.', true);
@@ -946,6 +970,10 @@ async function fetchRestaurantOverpass(query) {
 }
 
 async function loadRestaurants(forceRefresh = false) {
+  if (!navigator.onLine) {
+    setRestaurantMessage('Gaststättensuche benötigt eine Internetverbindung.', true);
+    return;
+  }
   if (map.getZoom() < RESTAURANT_MIN_ZOOM) {
     setRestaurantMessage('Bitte weiter in die Karte hineinzoomen.', true);
     return;
@@ -1044,6 +1072,8 @@ function addMapToolsControl() {
       ['weirs', '⚠️ Wehre', () => toggleHazard('weir')],
       ['navigation', '🧭 Navigation', () => setNavigationEnabled(!navigationEnabled)]
     ];
+
+    offlineMapManager.init(container);
 
     tools.forEach(([name, text, handler]) => {
       const button = document.createElement('button');
@@ -1177,10 +1207,15 @@ map.on('click', closeSearchPanel);
 map.on('moveend zoomend', scheduleHazardLoad);
 map.on('moveend zoomend', renderRestaurants);
 const initialOverlays = savedMapOverlays();
-if (initialOverlays.seamark) seamark.addTo(map);
+if (initialOverlays.seamark && navigator.onLine) seamark.addTo(map);
 previousTracksVisible = Boolean(initialOverlays.previousTracks);
 setToolButton('seamark', map.hasLayer(seamark));
 setToolButton('previousTracks', previousTracksVisible);
+
+window.addEventListener('offline', () => {
+  if (map.hasLayer(seamark)) map.removeLayer(seamark);
+  setToolButton('seamark', false);
+});
 
 
 /* Zahl deutsch formatieren */
