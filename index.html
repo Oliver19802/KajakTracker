@@ -1,8 +1,13 @@
 <!DOCTYPE html>
 <html lang="de">
+
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  >
 
   <title>KajakTracker</title>
 
@@ -13,79 +18,144 @@
     crossorigin=""
   >
 
-  <!-- Eigene CSS-Datei -->
+  <!-- Eigene CSS -->
   <link rel="stylesheet" href="style.css">
 </head>
+
 
 <body>
 
   <header>
-    <div class="title">KajakTracker</div>
-    <div id="status" class="status idle">Bereit</div>
+
+    <div class="title">
+      KajakTracker
+    </div>
+
+    <div
+      id="status"
+      class="status idle"
+    >
+      Bereit
+    </div>
+
   </header>
+
 
   <main>
 
-    <!-- Karte -->
+    <!-- ==================================================
+         KARTE
+         ================================================== -->
+
     <div id="map"></div>
 
-    <!-- Bedienfeld -->
+
+    <!-- ==================================================
+         BEDIENFELD
+         ================================================== -->
+
     <section class="panel">
 
-      <div id="timer" class="timer">00:00:00</div>
+      <!-- Timer -->
+      <div
+        id="timer"
+        class="timer"
+      >
+        00:00:00
+      </div>
 
+
+      <!-- Statistik -->
       <div class="stats">
 
         <div>
           <span>Entfernung</span>
-          <strong id="distance">0,00 km</strong>
+          <strong id="distance">
+            0,00 km
+          </strong>
         </div>
+
 
         <div>
           <span>Geschwindigkeit</span>
-          <strong id="speed">0,0 km/h</strong>
+          <strong id="speed">
+            0,0 km/h
+          </strong>
         </div>
 
+
         <div>
-          <span>Durchschnitt</span>
-          <strong id="average">0,0 km/h</strong>
+          <span>Ø Tempo</span>
+          <strong id="avgSpeed">
+            0,0 km/h
+          </strong>
         </div>
+
 
         <div>
           <span>Max</span>
-          <strong id="maxSpeed">0,0 km/h</strong>
+          <strong id="maxSpeed">
+            0,0 km/h
+          </strong>
         </div>
+
 
         <div>
           <span>Punkte</span>
-          <strong id="points">0</strong>
+          <strong id="points">
+            0
+          </strong>
         </div>
 
       </div>
 
+
+      <!-- ==================================================
+           HAUPTBUTTONS
+           ================================================== -->
+
       <div class="buttons">
 
-        <button id="startBtn" class="primary">
+        <button
+          id="startBtn"
+          class="primary"
+        >
           ▶ Start
         </button>
 
-        <button id="pauseBtn" class="pause" disabled>
-         Ⅱ Pause
+
+        <button
+          id="pauseBtn"
+          class="pause"
+          disabled
+        >
+          Ⅱ Pause
         </button>
 
-        <button id="stopBtn" class="danger" disabled>
+
+        <button
+          id="stopBtn"
+          class="danger"
+          disabled
+        >
           ■ Stoppen
         </button>
 
       </div>
 
+
+      <!-- ==================================================
+           ZUSATZBUTTONS
+           ================================================== -->
+
       <div class="secondaryButtons">
 
-        <button id="locationBtn">
+        <button id="locateBtn">
           ◎ Mein Standort
         </button>
 
-        <button id="gpxBtn">
+
+        <button id="exportBtn">
           ⇩ GPX
         </button>
 
@@ -95,14 +165,23 @@
 
   </main>
 
-  <!-- Leaflet JavaScript -->
+
+  <!-- ======================================================
+       LEAFLET JAVASCRIPT
+       ====================================================== -->
+
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     crossorigin="">
   </script>
 
-  <!-- Eigene JavaScript-Datei -->
+
+  <!-- ======================================================
+       EIGENE JAVASCRIPT-DATEI
+       ====================================================== -->
+
   <script src="app.js"></script>
 
 </body>
+
 </html>
