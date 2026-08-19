@@ -72,6 +72,15 @@ let currentSpeed = 0;
 
 let marker = null;
 
+/* Marker einer ausgewählten, gespeicherten Fahrt. */
+let tripMarkers = L.layerGroup().addTo(map);
+
+let selectedTripId = null;
+
+const TRIPS_STORAGE_KEY = 'kajakTrips';
+
+const ACTIVE_TRIP_STORAGE_KEY = 'kajakActiveTrip';
+
 
 /* Aktuelle Strecke */
 
@@ -138,6 +147,16 @@ function timerText(sec) {
       String(v).padStart(2, '0')
     )
     .join(':');
+}
+
+
+/* Durchschnittsgeschwindigkeit in m/s. */
+
+function averageSpeed(distance, duration) {
+
+  return duration > 0
+    ? distance / duration
+    : 0;
 }
 
 
@@ -253,7 +272,125 @@ function resetTrack() {
 
   line.setLatLngs([]);
 
+  tripMarkers.clearLayers();
+
+  selectedTripId = null;
+
   updateUI();
+}
+
+
+/* =========================================================
+   LAUFENDE FAHRT ZWISCHENSPEICHERN
+   ========================================================= */
+
+function saveActiveTrip() {
+
+  if (!startedAt || state === 'idle') {
+    return;
+  }
+
+  const activeTrip = {
+    startedAt,
+    elapsed: elapsedSeconds(),
+    track,
+    totalDistance,
+    maxSpeed,
+    currentSpeed,
+    lastPosition
+  };
+
+  try {
+
+    localStorage.setItem(
+      ACTIVE_TRIP_STORAGE_KEY,
+      JSON.stringify(activeTrip)
+    );
+
+  } catch (e) {
+
+    console.error(
+      'Fehler beim Zwischenspeichern der Fahrt:',
+      e
+    );
+  }
+}
+
+
+function clearActiveTrip() {
+
+  localStorage.removeItem(
+    ACTIVE_TRIP_STORAGE_KEY
+  );
+}
+
+
+function restoreActiveTrip() {
+
+  let activeTrip;
+
+  try {
+
+    activeTrip = JSON.parse(
+      localStorage.getItem(
+        ACTIVE_TRIP_STORAGE_KEY
+      ) || 'null'
+    );
+
+  } catch (e) {
+
+    console.error(
+      'Fehler beim Laden der zwischengespeicherten Fahrt:',
+      e
+    );
+
+    clearActiveTrip();
+
+    return;
+  }
+
+  if (!activeTrip || !Array.isArray(activeTrip.track)) {
+    return;
+  }
+
+  track = activeTrip.track;
+
+  totalDistance = Number(activeTrip.totalDistance) || 0;
+
+  maxSpeed = Number(activeTrip.maxSpeed) || 0;
+
+  currentSpeed = 0;
+
+  lastPosition = activeTrip.lastPosition || null;
+
+  startedAt =
+    Date.now() -
+    (Math.max(0, Number(activeTrip.elapsed) || 0) * 1000);
+
+  pausedAt = Date.now();
+
+  accumulatedPause = 0;
+
+  state = 'paused';
+
+  line.setLatLngs(
+    track.map(
+      p => [p.lat, p.lon]
+    )
+  );
+
+  setStatus(
+    'Unterbrochene Fahrt',
+    'paused'
+  );
+
+  $('startBtn').disabled = true;
+
+  $('pauseBtn').disabled = false;
+
+  $('stopBtn').disabled = false;
+
+  $('pauseBtn').textContent = '▶ Weiter';
 }
 
 
@@ -330,11 +467,15 @@ function onPosition(pos) {
   }
 
 
+  const reportedSpeed =
+    pos.coords.speed;
+
+
   currentSpeed =
-    Math.max(
-      0,
-      pos.coords.speed || 0
-    );
+    Number.isFinite(reportedSpeed) &&
+    reportedSpeed >= 0
+      ? reportedSpeed
+      : 0;
 
 
   /*
@@ -373,6 +514,42 @@ function onPosition(pos) {
         d < 100
       ) {
 
+        const previousPoint =
+          track[track.length - 1];
+
+        const pointTime =
+          new Date(
+            pos.timestamp || Date.now()
+          ).toISOString();
+
+
+        /*
+          iPhones liefern die GPS-Geschwindigkeit nicht immer.
+          In diesem Fall aus Distanz und Zeit berechnen.
+        */
+
+        if (
+          !(
+            Number.isFinite(reportedSpeed) &&
+            reportedSpeed >= 0
+          ) &&
+          previousPoint
+        ) {
+
+          const seconds =
+            (
+              new Date(pointTime) -
+              new Date(previousPoint.time)
+            ) / 1000;
+
+
+          if (seconds > 0) {
+
+            currentSpeed =
+              d / seconds;
+          }
+        }
+
         totalDistance += d;
 
 
@@ -382,7 +559,7 @@ function onPosition(pos) {
           lon: c[1],
 
           time:
-            new Date().toISOString(),
+            pointTime,
 
           speed:
             currentSpeed
@@ -420,6 +597,9 @@ function onPosition(pos) {
         maxSpeed,
         currentSpeed
       );
+
+
+    saveActiveTrip();
   }
 
 
@@ -520,6 +700,9 @@ function start() {
     false;
 
 
+  saveActiveTrip();
+
+
   startGPS();
 
 
@@ -559,6 +742,8 @@ function pause() {
 
     stopGPS();
 
+    saveActiveTrip();
+
   }
 
   else if (state === 'paused') {
@@ -584,6 +769,18 @@ function pause() {
 
 
     startGPS();
+
+
+    if (!timerId) {
+
+      timerId =
+        setInterval(
+          updateUI,
+          500
+        );
+    }
+
+    saveActiveTrip();
   }
 
 
@@ -649,6 +846,8 @@ function stop() {
 
   saveTrip();
 
+  clearActiveTrip();
+
 
   updateUI();
 }
@@ -662,11 +861,23 @@ function getTrips() {
 
   try {
 
-    return JSON.parse(
+    const trips = JSON.parse(
       localStorage.getItem(
-        'kajakTrips'
+        TRIPS_STORAGE_KEY
       ) || '[]'
     );
+
+
+    return Array.isArray(trips)
+      ? trips.map(
+          trip => ({
+            ...trip,
+            startedAt:
+              trip.startedAt ||
+              trip.date
+          })
+        )
+      : [];
 
   } catch (e) {
 
@@ -705,16 +916,25 @@ function saveTrip() {
     getTrips();
 
 
+  const duration =
+    elapsedSeconds();
+
+
   const trip = {
 
     id:
       Date.now().toString(),
 
+    /* Datum und Uhrzeit des Fahrtbeginns. */
+    startedAt:
+      new Date(startedAt).toISOString(),
+
+    /* Für bereits vorhandene Daten und Abwärtskompatibilität. */
     date:
-      new Date().toISOString(),
+      new Date(startedAt).toISOString(),
 
     duration:
-      elapsedSeconds(),
+      duration,
 
     distance:
       totalDistance,
@@ -723,10 +943,10 @@ function saveTrip() {
       maxSpeed,
 
     averageSpeed:
-      elapsedSeconds() > 0
-        ? totalDistance /
-          elapsedSeconds()
-        : 0,
+      averageSpeed(
+        totalDistance,
+        duration
+      ),
 
     track:
       track
@@ -741,7 +961,7 @@ function saveTrip() {
   */
 
   localStorage.setItem(
-    'kajakTrips',
+    TRIPS_STORAGE_KEY,
     JSON.stringify(
       trips.slice(0, 100)
     )
@@ -832,7 +1052,7 @@ function renderTrips() {
             </div>
 
             <div class="tripDate">
-              ${formatDate(trip.date)}
+              ${formatDate(trip.startedAt)}
             </div>
 
           </div>
@@ -853,6 +1073,20 @@ function renderTrips() {
             <span>Dauer</span>
             <strong>
               ${timerText(trip.duration)}
+            </strong>
+          </div>
+
+          <div>
+            <span>Ø Tempo</span>
+            <strong>
+              ${fmt(
+                (Number.isFinite(trip.averageSpeed)
+                  ? trip.averageSpeed
+                  : averageSpeed(
+                      trip.distance,
+                      trip.duration
+                    )) * 3.6
+              )} km/h
             </strong>
           </div>
 
@@ -998,6 +1232,14 @@ function viewTrip(id) {
   }
 
 
+  selectedTripId = id;
+
+
+  /* Marker der zuvor ausgewählten Fahrt entfernen. */
+
+  tripMarkers.clearLayers();
+
+
   /*
     Aktuelle Linie löschen.
   */
@@ -1048,9 +1290,20 @@ function viewTrip(id) {
   L.marker(
     latLngs[0]
   )
-    .addTo(map)
+    .addTo(tripMarkers)
     .bindPopup(
       'Start'
+    );
+
+
+  /* Zielmarker. */
+
+  L.marker(
+    latLngs[latLngs.length - 1]
+  )
+    .addTo(tripMarkers)
+    .bindPopup(
+      'Ziel'
     );
 
 
@@ -1096,14 +1349,14 @@ function viewTrip(id) {
 
 
   $('average').textContent =
-    trip.duration > 0
-      ? fmt(
-          (
-            trip.distance /
+    fmt(
+      (Number.isFinite(trip.averageSpeed)
+        ? trip.averageSpeed
+        : averageSpeed(
+            trip.distance,
             trip.duration
-          ) * 3.6
-        ) + ' km/h'
-      : '0,0 km/h';
+          )) * 3.6
+    ) + ' km/h';
 
 
   $('maxSpeed').textContent =
@@ -1227,7 +1480,7 @@ function exportSavedTrip(id) {
 >
   <trk>
     <name>
-      Kajakfahrt ${formatDate(trip.date)}
+      Kajakfahrt ${formatDate(trip.startedAt)}
     </name>
 
     <trkseg>
@@ -1428,11 +1681,19 @@ function deleteTrip(id) {
 
 
   localStorage.setItem(
-    'kajakTrips',
+    TRIPS_STORAGE_KEY,
     JSON.stringify(
       newTrips
     )
   );
+
+
+  if (selectedTripId === id) {
+
+    tripMarkers.clearLayers();
+
+    selectedTripId = null;
+  }
 
 
   renderTrips();
@@ -1467,8 +1728,12 @@ function clearAllTrips() {
 
 
   localStorage.removeItem(
-    'kajakTrips'
+    TRIPS_STORAGE_KEY
   );
+
+  tripMarkers.clearLayers();
+
+  selectedTripId = null;
 
 
   renderTrips();
@@ -1562,6 +1827,8 @@ if (
 /* =========================================================
    START
    ========================================================= */
+
+restoreActiveTrip();
 
 updateUI();
 
