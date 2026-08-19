@@ -143,6 +143,7 @@ const RESTAURANT_OVERPASS_URLS = [
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const RESTAURANT_MIN_ZOOM = 14;
 const RESTAURANT_WATER_DISTANCE_METERS = 30;
+const RESTAURANT_WATER_QUERY_RADIUS_METERS = 40;
 const RESTAURANT_REQUEST_TIMEOUT_MS = 12000;
 const RESTAURANT_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
 
@@ -988,6 +989,40 @@ function elementGeometries(element) {
   return geometries;
 }
 
+function restaurantLatLng(element) {
+  const directLatLng = hazardLatLng(element);
+  if (directLatLng) return directLatLng;
+  const coordinates = elementGeometries(element).flat();
+  if (!coordinates.length) return null;
+  const latitudes = coordinates.map(coordinate => Number(coordinate.lat));
+  const longitudes = coordinates.map(coordinate => Number(coordinate.lon));
+  return L.latLng(
+    (Math.min(...latitudes) + Math.max(...latitudes)) / 2,
+    (Math.min(...longitudes) + Math.max(...longitudes)) / 2
+  );
+}
+
+function restaurantWaterSearchBbox(element) {
+  const coordinates = elementGeometries(element).flat();
+  const latLng = restaurantLatLng(element);
+  if (!coordinates.length && latLng) {
+    coordinates.push({ lat: latLng.lat, lon: latLng.lng });
+  }
+  if (!coordinates.length) return null;
+  const latitudes = coordinates.map(coordinate => Number(coordinate.lat));
+  const longitudes = coordinates.map(coordinate => Number(coordinate.lon));
+  const centerLatitude = (Math.min(...latitudes) + Math.max(...latitudes)) / 2;
+  const latitudePadding = RESTAURANT_WATER_QUERY_RADIUS_METERS / 110540;
+  const longitudePadding = RESTAURANT_WATER_QUERY_RADIUS_METERS /
+    (111320 * Math.cos(centerLatitude * Math.PI / 180));
+  return [
+    Math.min(...latitudes) - latitudePadding,
+    Math.min(...longitudes) - longitudePadding,
+    Math.max(...latitudes) + latitudePadding,
+    Math.max(...longitudes) + longitudePadding
+  ].map(value => value.toFixed(6)).join(',');
+}
+
 async function fetchRestaurantOverpass(query) {
   let lastError;
   for (const url of RESTAURANT_OVERPASS_URLS) {
@@ -1037,30 +1072,49 @@ async function loadWaterRestaurants(forceRefresh = false) {
   const bbox = [requestBounds.getSouth(), requestBounds.getWest(),
     requestBounds.getNorth(), requestBounds.getEast()]
     .map(value => value.toFixed(6)).join(',');
-  const query = `[out:json][timeout:20][maxsize:8388608];(
+  const restaurantQuery = `[out:json][timeout:20][maxsize:8388608];(
     node["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
     way["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
     relation["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
-    way["waterway"~"^(river|riverbank|stream|canal|drain)$"](${bbox});
-    relation["waterway"~"^(river|riverbank|stream|canal|drain)$"](${bbox});
-    way["natural"="water"](${bbox});
-    relation["natural"="water"](${bbox});
-  );out center geom tags;`;
+  );out body geom qt;`;
 
   restaurantAbortController?.abort();
   restaurantAbortController = new AbortController();
   setRestaurantMessage('Gaststätten am Wasser werden geladen …');
   try {
-    const data = await fetchRestaurantOverpass(query);
-    const waterGeometries = (data.elements || [])
-      .filter(element => !element.tags?.amenity)
-      .flatMap(elementGeometries);
+    const restaurantData = await fetchRestaurantOverpass(restaurantQuery);
+    const restaurantElements = restaurantData.elements || [];
+    const waterSearchBboxes = [...new Set(
+      restaurantElements.map(restaurantWaterSearchBbox).filter(Boolean)
+    )];
+    const waterSelectors = waterSearchBboxes.flatMap(searchBbox => [
+      `way["waterway"~"^(river|canal|stream|ditch|drain|riverbank|tidal_channel|fairway)$"](${searchBbox});`,
+      `relation["waterway"~"^(river|canal|stream|ditch|drain|riverbank|tidal_channel|fairway)$"](${searchBbox});`,
+      `way["natural"="water"](${searchBbox});`,
+      `relation["natural"="water"](${searchBbox});`,
+      `way["water"~"^(river|canal|lake|pond|reservoir|basin|lagoon|oxbow)$"](${searchBbox});`,
+      `relation["water"~"^(river|canal|lake|pond|reservoir|basin|lagoon|oxbow)$"](${searchBbox});`
+    ]).join('\n');
+    const waterData = waterSelectors
+      ? await fetchRestaurantOverpass(
+        `[out:json][timeout:20][maxsize:8388608];(${waterSelectors});out body geom qt;`
+      )
+      : { elements: [] };
+    const waterGeometries = (waterData.elements || []).flatMap(elementGeometries);
     const seen = new Set();
-    const rawRestaurants = (data.elements || []).flatMap(element => {
-      if (!element.tags?.amenity) return [];
-      const latLng = hazardLatLng(element);
+    const rawRestaurants = restaurantElements.flatMap(element => {
+      const latLng = restaurantLatLng(element);
       const key = `${element.type}/${element.id}`;
-      if (!latLng || seen.has(key)) return [];
+      if (!latLng || seen.has(key)) {
+        console.log('[Gaststätten am Wasser]', {
+          name: element.tags.name || restaurantType(element.tags),
+          osmType: element.type,
+          distanceMeters: null,
+          result: seen.has(key) ? 'ausgeschlossen: Duplikat' :
+            'ausgeschlossen: keine nutzbare Position'
+        });
+        return [];
+      }
       seen.add(key);
       const restaurantGeometries = elementGeometries(element);
       const waterDistance = waterGeometries.reduce((minimum, waterGeometry) => {
@@ -1072,7 +1126,18 @@ async function loadWaterRestaurants(forceRefresh = false) {
           : distanceToWaterGeometry(latLng, waterGeometry);
         return Math.min(minimum, geometryDistance);
       }, Infinity);
-      if (waterDistance > RESTAURANT_WATER_DISTANCE_METERS) return [];
+      const isIncluded = waterDistance <= RESTAURANT_WATER_DISTANCE_METERS;
+      console.log('[Gaststätten am Wasser]', {
+        name: element.tags.name || restaurantType(element.tags),
+        osmType: element.type,
+        distanceMeters: Number.isFinite(waterDistance)
+          ? Math.round(waterDistance * 10) / 10
+          : null,
+        result: isIncluded ? 'enthalten' : waterGeometries.length
+          ? 'ausgeschlossen: mehr als 30 m vom Wasser entfernt'
+          : 'ausgeschlossen: keine passende Wassergeometrie geladen'
+      });
+      if (!isIncluded) return [];
       return [{ latLng, tags: element.tags || {}, waterDistance }];
     });
     restaurantFeatures = rawRestaurants.filter((feature, index, features) =>
