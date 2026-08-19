@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="de">
-
 <head>
   <meta charset="UTF-8">
 
@@ -15,173 +14,106 @@
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    crossorigin=""
   >
 
   <!-- Eigene CSS -->
   <link rel="stylesheet" href="style.css">
 </head>
 
-
 <body>
 
-  <header>
+<header>
+  <div class="title">KajakTracker</div>
+  <div id="status" class="status idle">Bereit</div>
+</header>
 
-    <div class="title">
-      KajakTracker
+<main>
+
+  <!-- Karte -->
+  <div id="map"></div>
+
+  <!-- Bedienfeld -->
+  <section class="panel">
+
+    <div id="timer" class="timer">00:00:00</div>
+
+    <div class="stats">
+
+      <div>
+        <span>Entfernung</span>
+        <strong id="distance">0,00 km</strong>
+      </div>
+
+      <div>
+        <span>Geschwindigkeit</span>
+        <strong id="speed">0,0 km/h</strong>
+      </div>
+
+      <div>
+        <span>Ø Tempo</span>
+        <strong id="average">0,0 km/h</strong>
+      </div>
+
+      <div>
+        <span>Max</span>
+        <strong id="maxSpeed">0,0 km/h</strong>
+      </div>
+
+      <div>
+        <span>Punkte</span>
+        <strong id="points">0</strong>
+      </div>
+
     </div>
 
-    <div
-      id="status"
-      class="status idle"
-    >
-      Bereit
-    </div>
+    <div class="buttons">
 
-  </header>
-
-
-  <main>
-
-    <!-- ==================================================
-         KARTE
-         ================================================== -->
-
-    <div id="map"></div>
-
-
-    <!-- ==================================================
-         BEDIENFELD
-         ================================================== -->
-
-    <section class="panel">
-
-      <!-- Timer -->
-      <div
-        id="timer"
-        class="timer"
+      <button
+        id="startBtn"
+        class="primary"
       >
-        00:00:00
-      </div>
+        ▶ Start
+      </button>
 
+      <button
+        id="pauseBtn"
+        class="pause"
+        disabled
+      >
+        Ⅱ Pause
+      </button>
 
-      <!-- Statistik -->
-      <div class="stats">
+      <button
+        id="stopBtn"
+        class="danger"
+        disabled
+      >
+        ■ Stoppen
+      </button>
 
-        <div>
-          <span>Entfernung</span>
-          <strong id="distance">
-            0,00 km
-          </strong>
-        </div>
+    </div>
 
+    <div class="secondaryButtons">
 
-        <div>
-          <span>Geschwindigkeit</span>
-          <strong id="speed">
-            0,0 km/h
-          </strong>
-        </div>
+      <button id="locationBtn">
+        ◎ Mein Standort
+      </button>
 
+      <button id="gpxBtn">
+        ⇩ GPX
+      </button>
 
-        <div>
-          <span>Ø Tempo</span>
-          <strong id="avgSpeed">
-            0,0 km/h
-          </strong>
-        </div>
+    </div>
 
+  </section>
 
-        <div>
-          <span>Max</span>
-          <strong id="maxSpeed">
-            0,0 km/h
-          </strong>
-        </div>
+</main>
 
+<!-- Leaflet JavaScript -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-        <div>
-          <span>Punkte</span>
-          <strong id="points">
-            0
-          </strong>
-        </div>
-
-      </div>
-
-
-      <!-- ==================================================
-           HAUPTBUTTONS
-           ================================================== -->
-
-      <div class="buttons">
-
-        <button
-          id="startBtn"
-          class="primary"
-        >
-          ▶ Start
-        </button>
-
-
-        <button
-          id="pauseBtn"
-          class="pause"
-          disabled
-        >
-          Ⅱ Pause
-        </button>
-
-
-        <button
-          id="stopBtn"
-          class="danger"
-          disabled
-        >
-          ■ Stoppen
-        </button>
-
-      </div>
-
-
-      <!-- ==================================================
-           ZUSATZBUTTONS
-           ================================================== -->
-
-      <div class="secondaryButtons">
-
-        <button id="locateBtn">
-          ◎ Mein Standort
-        </button>
-
-
-        <button id="exportBtn">
-          ⇩ GPX
-        </button>
-
-      </div>
-
-    </section>
-
-  </main>
-
-
-  <!-- ======================================================
-       LEAFLET JAVASCRIPT
-       ====================================================== -->
-
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    crossorigin="">
-  </script>
-
-
-  <!-- ======================================================
-       EIGENE JAVASCRIPT-DATEI
-       ====================================================== -->
-
-  <script src="app.js"></script>
+<!-- Eigene JavaScript-Datei -->
+<script src="app.js"></script>
 
 </body>
-
 </html>
