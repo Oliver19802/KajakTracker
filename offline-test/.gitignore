@@ -1,0 +1,4 @@
+/data/*
+!/data/spreewald-z10-15.pmtiles
+/tools/
+/work/

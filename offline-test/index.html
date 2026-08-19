@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>KajakTracker Offline-Karten-PoC</title>
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="offline-test.css">
+</head>
+<body>
+  <main id="map" aria-label="Offline-Karte Burg (Spreewald)"></main>
+  <section class="panel" aria-label="Testinformationen">
+    <strong>Offline-PoC · Burg (Spreewald)</strong>
+    <span id="status">Lokale Karte wird geladen …</span>
+  </section>
+  <button id="locate" type="button">◎ Mein Standort</button>
+  <footer>© OpenStreetMap contributors · © OpenMapTiles</footer>
+  <script src="vendor/maplibre-gl.js"></script>
+  <script src="vendor/pmtiles.js"></script>
+  <script src="offline-test.js"></script>
+</body>
+</html>
