@@ -135,7 +135,14 @@ const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter'
 ];
+const RESTAURANT_OVERPASS_URLS = [
+  ...OVERPASS_URLS,
+  'https://overpass.private.coffee/api/interpreter'
+];
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const RESTAURANT_MIN_ZOOM = 14;
+const RESTAURANT_WATER_DISTANCE_METERS = 10;
+const RESTAURANT_REQUEST_TIMEOUT_MS = 12000;
 
 
 /* =========================================================
@@ -868,52 +875,113 @@ function setRestaurantMessage(message, isError = false) {
   status.classList.toggle('isError', isError);
 }
 
+function distanceToWaterSegment(point, start, end) {
+  const metersPerLon = 111320 * Math.cos(point.lat * Math.PI / 180);
+  const toXY = coordinate => ({
+    x: (Number(coordinate.lon) - point.lng) * metersPerLon,
+    y: (Number(coordinate.lat) - point.lat) * 110540
+  });
+  const a = toXY(start);
+  const b = toXY(end);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared
+    ? Math.max(0, Math.min(1, -(a.x * dx + a.y * dy) / lengthSquared))
+    : 0;
+  return Math.hypot(a.x + t * dx, a.y + t * dy);
+}
+
+function distanceToWaterGeometry(point, geometry) {
+  if (!Array.isArray(geometry) || geometry.length < 2) return Infinity;
+  let minimum = Infinity;
+  for (let index = 1; index < geometry.length; index += 1) {
+    minimum = Math.min(
+      minimum,
+      distanceToWaterSegment(point, geometry[index - 1], geometry[index])
+    );
+  }
+  return minimum;
+}
+
+async function fetchRestaurantOverpass(query) {
+  let lastError;
+  for (const url of RESTAURANT_OVERPASS_URLS) {
+    const attemptController = new AbortController();
+    const abortAttempt = () => attemptController.abort();
+    restaurantAbortController.signal.addEventListener('abort', abortAttempt, { once: true });
+    const timeoutId = setTimeout(abortAttempt, RESTAURANT_REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: new URLSearchParams({ data: query }),
+        signal: attemptController.signal
+      });
+      if (response.ok) return response.json();
+      lastError = new Error(`Overpass-HTTP ${response.status}`);
+    } catch (error) {
+      if (restaurantAbortController.signal.aborted) throw error;
+      lastError = error;
+    } finally {
+      clearTimeout(timeoutId);
+      restaurantAbortController.signal.removeEventListener('abort', abortAttempt);
+    }
+  }
+  throw lastError || new Error('Keine Overpass-Instanz erreichbar');
+}
+
 async function loadWaterRestaurants() {
-  if (map.getZoom() < HAZARD_MIN_ZOOM) {
-    setRestaurantMessage(`Gaststätten ab Zoom ${HAZARD_MIN_ZOOM} laden.`, true);
+  if (map.getZoom() < RESTAURANT_MIN_ZOOM) {
+    setRestaurantMessage('Bitte weiter in die Karte hineinzoomen.', true);
     return;
   }
   restaurantsVisible = true;
   const visibleBounds = map.getBounds();
   if (loadedRestaurantBounds?.contains(visibleBounds)) {
     renderRestaurants();
-    setRestaurantMessage(`${restaurantFeatures.length} Gaststätten im geladenen Bereich`);
+    setRestaurantMessage(
+      restaurantFeatures.length
+        ? `${restaurantFeatures.length} Gaststätten direkt am Wasser gefunden`
+        : 'Keine Gaststätten direkt am Wasser gefunden.'
+    );
     return;
   }
 
-  const requestBounds = paddedMapBounds();
+  const requestBounds = visibleBounds;
   const bbox = [requestBounds.getSouth(), requestBounds.getWest(),
     requestBounds.getNorth(), requestBounds.getEast()]
     .map(value => value.toFixed(6)).join(',');
-  const query = `[out:json][timeout:25];
-    (way["waterway"~"^(river|riverbank|stream|canal|drain)$"](${bbox});
-     way["natural"="water"](${bbox});)->.water;
-    (node(around.water:150)["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
-     way(around.water:150)["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox}););
-    out center tags 100;`;
+  const query = `[out:json][timeout:20][maxsize:8388608];(
+    node["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
+    way["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
+    way["waterway"~"^(river|riverbank|stream|canal|drain)$"](${bbox});
+    way["natural"="water"](${bbox});
+  );out center geom tags;`;
 
   restaurantAbortController?.abort();
   restaurantAbortController = new AbortController();
   setRestaurantMessage('Gaststätten am Wasser werden geladen …');
   try {
-    let response;
-    for (const url of OVERPASS_URLS) {
-      response = await fetch(url, {
-        method: 'POST',
-        body: new URLSearchParams({ data: query }),
-        signal: restaurantAbortController.signal
-      });
-      if (response.ok) break;
-    }
-    if (!response?.ok) throw new Error(`Overpass-HTTP ${response?.status || 0}`);
-    const data = await response.json();
+    const data = await fetchRestaurantOverpass(query);
+    const waterGeometries = (data.elements || [])
+      .filter(element => !element.tags?.amenity && Array.isArray(element.geometry))
+      .map(element => element.geometry);
     const seen = new Set();
     const rawRestaurants = (data.elements || []).flatMap(element => {
+      if (!element.tags?.amenity) return [];
       const latLng = hazardLatLng(element);
       const key = `${element.type}/${element.id}`;
       if (!latLng || seen.has(key)) return [];
       seen.add(key);
-      return [{ latLng, tags: element.tags || {} }];
+      const waterDistance = waterGeometries.reduce(
+        (minimum, geometry) => Math.min(
+          minimum,
+          distanceToWaterGeometry(latLng, geometry)
+        ),
+        Infinity
+      );
+      if (waterDistance > RESTAURANT_WATER_DISTANCE_METERS) return [];
+      return [{ latLng, tags: element.tags || {}, waterDistance }];
     });
     restaurantFeatures = rawRestaurants.filter((feature, index, features) =>
       !features.slice(0, index).some(other =>
@@ -924,11 +992,15 @@ async function loadWaterRestaurants() {
     );
     loadedRestaurantBounds = requestBounds;
     renderRestaurants();
-    setRestaurantMessage(`${restaurantFeatures.length} Gaststätten am Wasser gefunden`);
+    setRestaurantMessage(
+      restaurantFeatures.length
+        ? `${restaurantFeatures.length} Gaststätten direkt am Wasser gefunden`
+        : 'Keine Gaststätten direkt am Wasser gefunden.'
+    );
   } catch (error) {
     if (error.name === 'AbortError') return;
     console.error('Gaststätten konnten nicht geladen werden:', error);
-    setRestaurantMessage('Gaststätten derzeit nicht verfügbar.', true);
+    setRestaurantMessage('Gaststätten konnten momentan nicht geladen werden.', true);
   }
 }
 
