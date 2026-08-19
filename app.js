@@ -128,6 +128,7 @@ let lastSearchAt = 0;
 let restaurantsVisible = false;
 let restaurantFeatures = [];
 let loadedRestaurantBounds = null;
+let loadedRestaurantAt = 0;
 let restaurantAbortController = null;
 
 const HAZARD_MIN_ZOOM = 12;
@@ -143,6 +144,7 @@ const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const RESTAURANT_MIN_ZOOM = 14;
 const RESTAURANT_WATER_DISTANCE_METERS = 10;
 const RESTAURANT_REQUEST_TIMEOUT_MS = 12000;
+const RESTAURANT_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
 
 
 /* =========================================================
@@ -904,6 +906,88 @@ function distanceToWaterGeometry(point, geometry) {
   return minimum;
 }
 
+function geometrySegments(geometry) {
+  if (!Array.isArray(geometry) || geometry.length < 2) return [];
+  return geometry.slice(1).map((end, index) => [geometry[index], end]);
+}
+
+function segmentsIntersect(a, b, c, d) {
+  const cross = (start, end, point) =>
+    (Number(end.lon) - Number(start.lon)) * (Number(point.lat) - Number(start.lat)) -
+    (Number(end.lat) - Number(start.lat)) * (Number(point.lon) - Number(start.lon));
+  const onSegment = (start, end, point) =>
+    Number(point.lon) >= Math.min(Number(start.lon), Number(end.lon)) &&
+    Number(point.lon) <= Math.max(Number(start.lon), Number(end.lon)) &&
+    Number(point.lat) >= Math.min(Number(start.lat), Number(end.lat)) &&
+    Number(point.lat) <= Math.max(Number(start.lat), Number(end.lat));
+  const first = cross(a, b, c);
+  const second = cross(a, b, d);
+  const third = cross(c, d, a);
+  const fourth = cross(c, d, b);
+  if (((first < 0 && second > 0) || (first > 0 && second < 0)) &&
+      ((third < 0 && fourth > 0) || (third > 0 && fourth < 0))) return true;
+  return (first === 0 && onSegment(a, b, c)) ||
+    (second === 0 && onSegment(a, b, d)) ||
+    (third === 0 && onSegment(c, d, a)) ||
+    (fourth === 0 && onSegment(c, d, b));
+}
+
+function pointInClosedGeometry(point, geometry) {
+  if (!Array.isArray(geometry) || geometry.length < 4) return false;
+  const first = geometry[0];
+  const last = geometry[geometry.length - 1];
+  if (Number(first.lat) !== Number(last.lat) || Number(first.lon) !== Number(last.lon)) {
+    return false;
+  }
+  let inside = false;
+  for (let index = 0, previous = geometry.length - 1;
+    index < geometry.length; previous = index, index += 1) {
+    const current = geometry[index];
+    const prior = geometry[previous];
+    const crossesLatitude = (Number(current.lat) > Number(point.lat)) !==
+      (Number(prior.lat) > Number(point.lat));
+    const crossingLongitude = (Number(prior.lon) - Number(current.lon)) *
+      (Number(point.lat) - Number(current.lat)) /
+      (Number(prior.lat) - Number(current.lat)) + Number(current.lon);
+    if (crossesLatitude && Number(point.lon) < crossingLongitude) inside = !inside;
+  }
+  return inside;
+}
+
+function distanceBetweenGeometries(firstGeometry, secondGeometry) {
+  const firstSegments = geometrySegments(firstGeometry);
+  const secondSegments = geometrySegments(secondGeometry);
+  if (!firstSegments.length || !secondSegments.length) return Infinity;
+  if (pointInClosedGeometry(firstGeometry[0], secondGeometry) ||
+      pointInClosedGeometry(secondGeometry[0], firstGeometry)) return 0;
+  let minimum = Infinity;
+  firstSegments.forEach(([firstStart, firstEnd]) => {
+    secondSegments.forEach(([secondStart, secondEnd]) => {
+      if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) {
+        minimum = 0;
+        return;
+      }
+      minimum = Math.min(
+        minimum,
+        distanceToWaterSegment(L.latLng(firstStart.lat, firstStart.lon), secondStart, secondEnd),
+        distanceToWaterSegment(L.latLng(firstEnd.lat, firstEnd.lon), secondStart, secondEnd),
+        distanceToWaterSegment(L.latLng(secondStart.lat, secondStart.lon), firstStart, firstEnd),
+        distanceToWaterSegment(L.latLng(secondEnd.lat, secondEnd.lon), firstStart, firstEnd)
+      );
+    });
+  });
+  return minimum;
+}
+
+function elementGeometries(element) {
+  const geometries = [];
+  if (Array.isArray(element.geometry)) geometries.push(element.geometry);
+  (element.members || []).forEach(member => {
+    if (Array.isArray(member.geometry)) geometries.push(member.geometry);
+  });
+  return geometries;
+}
+
 async function fetchRestaurantOverpass(query) {
   let lastError;
   for (const url of RESTAURANT_OVERPASS_URLS) {
@@ -930,19 +1014,21 @@ async function fetchRestaurantOverpass(query) {
   throw lastError || new Error('Keine Overpass-Instanz erreichbar');
 }
 
-async function loadWaterRestaurants() {
+async function loadWaterRestaurants(forceRefresh = false) {
   if (map.getZoom() < RESTAURANT_MIN_ZOOM) {
     setRestaurantMessage('Bitte weiter in die Karte hineinzoomen.', true);
     return;
   }
   restaurantsVisible = true;
   const visibleBounds = map.getBounds();
-  if (loadedRestaurantBounds?.contains(visibleBounds)) {
+  const cacheIsFresh = Date.now() - loadedRestaurantAt <= RESTAURANT_CACHE_MAX_AGE_MS;
+  if (!forceRefresh && restaurantFeatures.length && cacheIsFresh &&
+      loadedRestaurantBounds?.contains(visibleBounds)) {
     renderRestaurants();
     setRestaurantMessage(
       restaurantFeatures.length
         ? `${restaurantFeatures.length} Gaststätten direkt am Wasser gefunden`
-        : 'Keine Gaststätten direkt am Wasser gefunden.'
+        : 'Keine Gaststätten innerhalb von 10 m zum Wasser gefunden.'
     );
     return;
   }
@@ -954,8 +1040,11 @@ async function loadWaterRestaurants() {
   const query = `[out:json][timeout:20][maxsize:8388608];(
     node["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
     way["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
+    relation["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
     way["waterway"~"^(river|riverbank|stream|canal|drain)$"](${bbox});
+    relation["waterway"~"^(river|riverbank|stream|canal|drain)$"](${bbox});
     way["natural"="water"](${bbox});
+    relation["natural"="water"](${bbox});
   );out center geom tags;`;
 
   restaurantAbortController?.abort();
@@ -964,8 +1053,8 @@ async function loadWaterRestaurants() {
   try {
     const data = await fetchRestaurantOverpass(query);
     const waterGeometries = (data.elements || [])
-      .filter(element => !element.tags?.amenity && Array.isArray(element.geometry))
-      .map(element => element.geometry);
+      .filter(element => !element.tags?.amenity)
+      .flatMap(elementGeometries);
     const seen = new Set();
     const rawRestaurants = (data.elements || []).flatMap(element => {
       if (!element.tags?.amenity) return [];
@@ -973,13 +1062,16 @@ async function loadWaterRestaurants() {
       const key = `${element.type}/${element.id}`;
       if (!latLng || seen.has(key)) return [];
       seen.add(key);
-      const waterDistance = waterGeometries.reduce(
-        (minimum, geometry) => Math.min(
-          minimum,
-          distanceToWaterGeometry(latLng, geometry)
-        ),
-        Infinity
-      );
+      const restaurantGeometries = elementGeometries(element);
+      const waterDistance = waterGeometries.reduce((minimum, waterGeometry) => {
+        const geometryDistance = restaurantGeometries.length
+          ? restaurantGeometries.reduce((restaurantMinimum, restaurantGeometry) => Math.min(
+            restaurantMinimum,
+            distanceBetweenGeometries(restaurantGeometry, waterGeometry)
+          ), Infinity)
+          : distanceToWaterGeometry(latLng, waterGeometry);
+        return Math.min(minimum, geometryDistance);
+      }, Infinity);
       if (waterDistance > RESTAURANT_WATER_DISTANCE_METERS) return [];
       return [{ latLng, tags: element.tags || {}, waterDistance }];
     });
@@ -990,15 +1082,18 @@ async function loadWaterRestaurants() {
         other.latLng.distanceTo(feature.latLng) < 15
       )
     );
-    loadedRestaurantBounds = requestBounds;
+    loadedRestaurantBounds = restaurantFeatures.length ? requestBounds : null;
+    loadedRestaurantAt = restaurantFeatures.length ? Date.now() : 0;
     renderRestaurants();
     setRestaurantMessage(
       restaurantFeatures.length
         ? `${restaurantFeatures.length} Gaststätten direkt am Wasser gefunden`
-        : 'Keine Gaststätten direkt am Wasser gefunden.'
+        : 'Keine Gaststätten innerhalb von 10 m zum Wasser gefunden.'
     );
   } catch (error) {
     if (error.name === 'AbortError') return;
+    loadedRestaurantBounds = null;
+    loadedRestaurantAt = 0;
     console.error('Gaststätten konnten nicht geladen werden:', error);
     setRestaurantMessage('Gaststätten konnten momentan nicht geladen werden.', true);
   }
@@ -1155,7 +1250,7 @@ function addSearchControl() {
       if (!searchPanel.hidden) searchInput.focus();
     });
     L.DomEvent.on(searchSubmit, 'click', searchMap);
-    L.DomEvent.on(restaurantLoad, 'click', loadWaterRestaurants);
+    L.DomEvent.on(restaurantLoad, 'click', () => loadWaterRestaurants(true));
     L.DomEvent.on(restaurantClear, 'click', clearRestaurants);
     L.DomEvent.on(searchInput, 'keydown', event => {
       if (event.key === 'Enter') searchMap();
