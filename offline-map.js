@@ -6,8 +6,9 @@
   const MAP_STORE = 'maps';
   const CHUNK_STORE = 'chunks';
   const MAP_ID = 'spreewald';
-  const CHUNK_SIZE = 1024 * 1024;
+  const CHUNK_SIZE = 512 * 1024;
   const EXPECTED_SIZE = 33356774;
+  const STORAGE_RESERVE = 20 * 1024 * 1024;
   const MAP_URL = 'offline-test/data/spreewald-z10-15.pmtiles';
   const CENTER = [14.149, 51.835];
   const BOUNDS = [[51.5655066, 13.7128759], [52.1044933, 14.5851240]];
@@ -61,6 +62,17 @@
       data
     });
     await done;
+  }
+
+  async function getChunk(database, revision, index) {
+    const tx = database.transaction(CHUNK_STORE, 'readonly');
+    return requestResult(tx.objectStore(CHUNK_STORE).get(`${MAP_ID}:${revision}:${index}`));
+  }
+
+  async function countRevisionChunks(database, revision) {
+    const tx = database.transaction(CHUNK_STORE, 'readonly');
+    const revisionKey = `${MAP_ID}:${revision}`;
+    return requestResult(tx.objectStore(CHUNK_STORE).index('byRevision').count(IDBKeyRange.only(revisionKey)));
   }
 
   async function deleteRevision(database, revision) {
@@ -250,11 +262,13 @@
         elements.panel.dataset.storedBytes = String(metadata.size);
         elements.panel.dataset.chunkCount = String(metadata.chunkCount);
         elements.panel.dataset.persistence = metadata.persistenceGranted === true ? 'granted' : metadata.persistenceGranted === false ? 'denied' : 'unsupported';
+        elements.panel.dataset.downloadMethod = metadata.downloadMethod || 'legacy';
       } else {
         elements.details.textContent = 'Noch nicht auf diesem Gerät gespeichert.';
         delete elements.panel.dataset.storedBytes;
         delete elements.panel.dataset.chunkCount;
         delete elements.panel.dataset.persistence;
+        delete elements.panel.dataset.downloadMethod;
       }
       elements.download.disabled = downloadRunning;
       elements.update.disabled = downloadRunning;
@@ -318,12 +332,99 @@
       if (!navigator.storage?.estimate) return true;
       const estimate = await navigator.storage.estimate();
       if (!Number.isFinite(estimate.quota) || !Number.isFinite(estimate.usage)) return true;
-      return estimate.quota - estimate.usage >= EXPECTED_SIZE * 1.2;
+      return estimate.quota - estimate.usage >= EXPECTED_SIZE + STORAGE_RESERVE;
     }
 
     async function saveDownloadChunk(revision, chunkIndex, bytes) {
       const copy = bytes.slice().buffer;
       await putChunk(database, revision, chunkIndex, copy);
+    }
+
+    function validateResponse(response) {
+      if (!response.ok) throw new Error(`HTTP ${response.status} beim Kartendownload`);
+      const contentLengthHeader = response.headers.get('Content-Length');
+      const contentLength = contentLengthHeader === null ? null : Number(contentLengthHeader);
+      if (contentLength !== null && (!Number.isFinite(contentLength) || contentLength !== EXPECTED_SIZE)) {
+        throw new Error(`Unerwartete Dateigröße: ${contentLengthHeader} statt ${EXPECTED_SIZE} Bytes`);
+      }
+      return contentLength || EXPECTED_SIZE;
+    }
+
+    async function fetchMapResponse() {
+      const url = new URL(MAP_URL, document.baseURI);
+      if (url.origin !== location.origin) throw new Error('Offline-Karten-URL hat nicht denselben Ursprung');
+      const response = await fetch(url, { cache: 'no-store' });
+      return { response, contentLength: validateResponse(response) };
+    }
+
+    function updateDownloadProgress(received, total) {
+      const percent = Math.min(100, Math.round(received / total * 100));
+      setStatus(`Offline-Karte wird geladen … ${formatBytes(received)} / ${formatBytes(total)} · ${percent} %`);
+    }
+
+    async function downloadWithStream(response, contentLength, revision, progress) {
+      if (!response.body || typeof response.body.getReader !== 'function') {
+        const error = new Error('ReadableStream ist nicht verfügbar');
+        error.name = 'ReadableStreamUnavailableError';
+        throw error;
+      }
+      const reader = response.body.getReader();
+      let pending = new Uint8Array(0);
+      try {
+        while (true) {
+          const result = await reader.read();
+          if (result.done) break;
+          if (!(result.value instanceof Uint8Array)) throw new TypeError('Ungültiger Datenblock im Download-Stream');
+          progress.received += result.value.byteLength;
+          const combined = new Uint8Array(pending.byteLength + result.value.byteLength);
+          combined.set(pending);
+          combined.set(result.value, pending.byteLength);
+          pending = combined;
+          while (pending.byteLength >= CHUNK_SIZE) {
+            await saveDownloadChunk(revision, progress.chunkIndex++, pending.subarray(0, CHUNK_SIZE));
+            pending = pending.slice(CHUNK_SIZE);
+          }
+          updateDownloadProgress(progress.received, contentLength);
+        }
+        if (pending.byteLength) await saveDownloadChunk(revision, progress.chunkIndex++, pending);
+      } catch (error) {
+        await reader.cancel(error).catch(() => {});
+        throw error;
+      } finally {
+        reader.releaseLock();
+      }
+    }
+
+    async function downloadWithArrayBuffer(response, contentLength, revision, progress) {
+      const buffer = await response.arrayBuffer();
+      progress.received = buffer.byteLength;
+      if (progress.received !== contentLength || progress.received !== EXPECTED_SIZE) {
+        throw new Error(`Offline-Datei unvollständig: ${progress.received} von ${EXPECTED_SIZE} Bytes`);
+      }
+      for (let offset = 0; offset < buffer.byteLength; offset += CHUNK_SIZE) {
+        const length = Math.min(CHUNK_SIZE, buffer.byteLength - offset);
+        await saveDownloadChunk(revision, progress.chunkIndex++, new Uint8Array(buffer, offset, length));
+        updateDownloadProgress(Math.min(offset + length, buffer.byteLength), contentLength);
+      }
+    }
+
+    async function verifyDownloadedRevision(revision, size, chunkCount) {
+      if (size !== EXPECTED_SIZE) throw new Error(`Größenprüfung fehlgeschlagen: ${size} Bytes`);
+      const expectedChunkCount = Math.ceil(EXPECTED_SIZE / CHUNK_SIZE);
+      const storedChunkCount = await countRevisionChunks(database, revision);
+      if (chunkCount !== expectedChunkCount || storedChunkCount !== expectedChunkCount) {
+        throw new Error(`Chunk-Prüfung fehlgeschlagen: ${storedChunkCount} von ${expectedChunkCount}`);
+      }
+      const first = await getChunk(database, revision, 0);
+      const last = await getChunk(database, revision, expectedChunkCount - 1);
+      if (!first?.data || !last?.data) throw new Error('Erster oder letzter Offline-Kartenblock fehlt');
+      const expectedLastSize = EXPECTED_SIZE - (expectedChunkCount - 1) * CHUNK_SIZE;
+      if (first.data.byteLength !== CHUNK_SIZE || last.data.byteLength !== expectedLastSize) {
+        throw new Error('Gespeicherte Chunkgrößen sind ungültig');
+      }
+      const header = new Uint8Array(first.data, 0, 8);
+      const magic = String.fromCharCode(...header.subarray(0, 7));
+      if (magic !== 'PMTiles' || header[7] !== 3) throw new Error('PMTiles-v3-Header ist ungültig');
     }
 
     async function downloadMap() {
@@ -332,36 +433,37 @@
       updatePanel();
       const oldMetadata = metadata;
       const revision = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      let received = 0;
-      let chunkIndex = 0;
-      let pending = new Uint8Array(0);
+      const progress = { received: 0, chunkIndex: 0 };
       let persistenceGranted = null;
+      let phase = 'Speicherprüfung';
+      let method = 'stream';
       try {
-        if (!(await storageIsSufficient())) throw new Error('Nicht genügend freier Gerätespeicher für die Offline-Karte.');
+        if (!(await storageIsSufficient())) throw new Error('Nicht genügend Speicher für die Offline-Karte.');
         if (navigator.storage?.persist) {
           try { persistenceGranted = await navigator.storage.persist(); } catch (error) { console.warn('Persistenter Speicher nicht verfügbar:', error); }
         }
         setStatus('Offline-Karte wird geladen … 0 MB / 32 MB · 0 %');
-        const response = await fetch(new URL(MAP_URL, document.baseURI));
-        if (!response.ok || !response.body) throw new Error(`Download fehlgeschlagen (${response.status})`);
-        const contentLength = Number(response.headers.get('Content-Length')) || EXPECTED_SIZE;
-        const reader = response.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          received += value.byteLength;
-          const combined = new Uint8Array(pending.byteLength + value.byteLength);
-          combined.set(pending); combined.set(value, pending.byteLength); pending = combined;
-          while (pending.byteLength >= CHUNK_SIZE) {
-            await saveDownloadChunk(revision, chunkIndex++, pending.subarray(0, CHUNK_SIZE));
-            pending = pending.slice(CHUNK_SIZE);
+        phase = 'Streaming-Download';
+        let download = await fetchMapResponse();
+        try {
+          await downloadWithStream(download.response, download.contentLength, revision, progress);
+        } catch (streamError) {
+          console.warn('Streaming-Download fehlgeschlagen, ArrayBuffer-Fallback wird verwendet:', streamError);
+          phase = 'Fallback-Vorbereitung';
+          if (download.response.body && !download.response.body.locked) {
+            await download.response.body.cancel(streamError).catch(() => {});
           }
-          const percent = Math.min(100, Math.round(received / contentLength * 100));
-          setStatus(`Offline-Karte wird geladen … ${formatBytes(received)} / ${formatBytes(contentLength)} · ${percent} %`);
+          await deleteRevision(database, revision);
+          progress.received = 0;
+          progress.chunkIndex = 0;
+          method = 'arrayBuffer';
+          download = await fetchMapResponse();
+          phase = 'ArrayBuffer-Download';
+          await downloadWithArrayBuffer(download.response, download.contentLength, revision, progress);
         }
-        if (pending.byteLength) await saveDownloadChunk(revision, chunkIndex++, pending);
-        if (received !== contentLength || received < EXPECTED_SIZE) throw new Error('Offline-Datei wurde nicht vollständig übertragen.');
-        const newMetadata = { id: MAP_ID, revision, size: received, savedAt: new Date().toISOString(), chunkSize: CHUNK_SIZE, chunkCount: chunkIndex, complete: true, persistenceGranted, preferredMode: oldMetadata?.preferredMode || 'online' };
+        phase = 'Vollständigkeitsprüfung';
+        await verifyDownloadedRevision(revision, progress.received, progress.chunkIndex);
+        const newMetadata = { id: MAP_ID, revision, size: progress.received, savedAt: new Date().toISOString(), chunkSize: CHUNK_SIZE, chunkCount: progress.chunkIndex, complete: true, persistenceGranted, preferredMode: oldMetadata?.preferredMode || 'online', downloadMethod: method };
         const tx = database.transaction(MAP_STORE, 'readwrite');
         const done = transactionDone(tx);
         tx.objectStore(MAP_STORE).put(newMetadata);
@@ -371,11 +473,20 @@
         setStatus('✅ Offline verfügbar');
         showMapMessage('Spreewald-Karte ist jetzt offline verfügbar.');
       } catch (error) {
-        console.error('Offline-Download fehlgeschlagen:', error);
+        console.error('Offline-Download fehlgeschlagen:', {
+          name: error?.name,
+          message: error?.message,
+          stack: error?.stack,
+          phase,
+          receivedBytes: progress.received,
+          storedChunks: progress.chunkIndex
+        });
         await deleteRevision(database, revision).catch(() => {});
         metadata = oldMetadata;
-        setStatus(error.message || 'Offline-Karte konnte nicht vollständig gespeichert werden.', true);
-        showMapMessage('Offline-Karte konnte nicht vollständig gespeichert werden.', true);
+        const errorName = error?.name || 'Fehler';
+        const errorMessage = error?.message || 'Offline-Karte konnte nicht vollständig gespeichert werden.';
+        setStatus(`Offline-Download fehlgeschlagen: ${errorName} – ${errorMessage}`, true);
+        showMapMessage(errorMessage, true);
       } finally {
         downloadRunning = false;
         updatePanel();
