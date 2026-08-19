@@ -10,13 +10,14 @@
 
   <title>KajakTracker</title>
 
-  <!-- Leaflet CSS -->
+  <!-- Leaflet -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    crossorigin=""
   >
 
-  <!-- Eigene CSS -->
+  <!-- Eigene CSS-Datei -->
   <link rel="stylesheet" href="style.css">
 </head>
 
@@ -32,10 +33,12 @@
   <!-- Karte -->
   <div id="map"></div>
 
-  <!-- Bedienfeld -->
+  <!-- Hauptbedienfeld -->
   <section class="panel">
 
-    <div id="timer" class="timer">00:00:00</div>
+    <div id="timer" class="timer">
+      00:00:00
+    </div>
 
     <div class="stats">
 
@@ -66,6 +69,7 @@
 
     </div>
 
+    <!-- Start / Pause / Stop -->
     <div class="buttons">
 
       <button
@@ -93,6 +97,7 @@
 
     </div>
 
+    <!-- Standort / GPX -->
     <div class="secondaryButtons">
 
       <button id="locationBtn">
@@ -107,10 +112,35 @@
 
   </section>
 
+  <!-- Fahrtenverwaltung -->
+  <section class="tripsPanel">
+
+    <div class="tripsHeader">
+      <h2>Meine Fahrten</h2>
+
+      <button
+        id="clearTripsBtn"
+        class="clearTripsBtn"
+      >
+        Alle löschen
+      </button>
+    </div>
+
+    <div id="tripsList" class="tripsList">
+      <div class="noTrips">
+        Noch keine gespeicherten Fahrten.
+      </div>
+    </div>
+
+  </section>
+
 </main>
 
 <!-- Leaflet JavaScript -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  crossorigin="">
+</script>
 
 <!-- Eigene JavaScript-Datei -->
 <script src="app.js"></script>
