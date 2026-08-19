@@ -5,33 +5,41 @@
 :root {
   --teal: #56a8b3;
   --dark: #183f55;
+  --green: #3d9c58;
   --orange: #f59b19;
   --red: #f0443e;
+  --light: #eef4f5;
+  --border: #b9d6db;
 }
 
 html,
 body {
   margin: 0;
-  width: 100%;
-  height: 100%;
+  padding: 0;
+
+  min-height: 100%;
+
   font-family:
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
+
   background: #fff;
   color: var(--dark);
 }
 
 body {
   padding-top: env(safe-area-inset-top);
-  overflow: hidden;
 }
 
-/* Kopfzeile */
+/* -------------------------------- */
+/* HEADER */
+/* -------------------------------- */
 
 header {
   height: 76px;
+
   background: var(--teal);
   color: white;
 
@@ -40,9 +48,6 @@ header {
   justify-content: space-between;
 
   padding: 0 18px;
-
-  position: relative;
-  z-index: 1000;
 }
 
 .title {
@@ -52,10 +57,17 @@ header {
 
 .status {
   font-weight: 700;
+
   padding: 9px 13px;
+
   border-radius: 20px;
-  background: #fff;
+
+  background: white;
   color: #777;
+}
+
+.status.idle {
+  color: #39894a;
 }
 
 .status.recording {
@@ -66,68 +78,55 @@ header {
   color: #b27600;
 }
 
-.status.idle {
-  color: #39894a;
-}
-
-/* Hauptbereich */
+/* -------------------------------- */
+/* HAUPTBEREICH */
+/* -------------------------------- */
 
 main {
-  height: calc(100dvh - 76px);
+  min-height: calc(100dvh - 76px);
+
   display: flex;
   flex-direction: column;
-  position: relative;
 }
 
-/* WICHTIG:
-   Leaflet benötigt eine echte Höhe */
+/* -------------------------------- */
+/* KARTE */
+/* -------------------------------- */
 
 #map {
+  height: 58vh;
+  min-height: 420px;
+
   width: 100%;
-  flex: 1 1 auto;
-  min-height: 0;
-  position: relative;
-  z-index: 1;
 }
 
-/* Leaflet */
-
-.leaflet-container {
-  width: 100%;
-  height: 100%;
-  background: #ddd;
-}
-
-.leaflet-control-attribution {
-  font-size: 8px;
-}
-
-/* Bedienfeld */
+/* -------------------------------- */
+/* BEDIENPANEL */
+/* -------------------------------- */
 
 .panel {
-  position: relative;
-  z-index: 500;
-
-  background: #fff;
+  background: white;
 
   padding:
     12px
     14px
     calc(14px + env(safe-area-inset-bottom));
 
-  box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.12);
+  box-shadow:
+    0 -5px 20px rgba(0, 0, 0, .12);
 
   border-radius: 20px 20px 0 0;
 
-  flex-shrink: 0;
-}
+  position: relative;
 
-/* Timer */
+  z-index: 10;
+}
 
 .timer {
   text-align: center;
 
   font-size: 42px;
+
   font-weight: 800;
 
   letter-spacing: 1px;
@@ -135,7 +134,9 @@ main {
   margin: 3px 0 8px;
 }
 
-/* Statistik */
+/* -------------------------------- */
+/* STATISTIK */
+/* -------------------------------- */
 
 .stats {
   display: grid;
@@ -170,7 +171,9 @@ main {
   margin-top: 2px;
 }
 
-/* Hauptbuttons */
+/* -------------------------------- */
+/* BUTTONS */
+/* -------------------------------- */
 
 .buttons {
   display: grid;
@@ -191,22 +194,23 @@ button {
   padding: 13px 8px;
 
   font-size: 16px;
+
   font-weight: 800;
 
   color: var(--dark);
 
-  background: #eef4f5;
+  background: var(--light);
 
   -webkit-tap-highlight-color: transparent;
 }
 
 button:disabled {
-  opacity: 0.4;
+  opacity: .4;
 }
 
 button.primary {
-  background: #3d9c58;
-  color: #fff;
+  background: var(--green);
+  color: white;
 }
 
 button.pause {
@@ -216,10 +220,8 @@ button.pause {
 
 button.danger {
   background: var(--red);
-  color: #fff;
+  color: white;
 }
-
-/* Zweite Buttonreihe */
 
 .secondaryButtons {
   display: grid;
@@ -235,12 +237,209 @@ button.danger {
 .secondaryButtons button {
   font-size: 14px;
 
-  background: #fff;
+  background: white;
 
-  border: 1px solid #b9d6db;
+  border: 1px solid var(--border);
 }
 
-/* Kleine iPhones */
+/* -------------------------------- */
+/* FAHRTENVERWALTUNG */
+/* -------------------------------- */
+
+.tripsPanel {
+  background: #f7fafb;
+
+  padding:
+    18px
+    14px
+    calc(25px + env(safe-area-inset-bottom));
+
+  border-top: 1px solid #dce9eb;
+}
+
+.tripsHeader {
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  margin-bottom: 12px;
+}
+
+.tripsHeader h2 {
+  margin: 0;
+
+  font-size: 22px;
+
+  color: var(--dark);
+}
+
+.clearTripsBtn {
+  background: white;
+
+  border: 1px solid #e2b0ae;
+
+  color: #c74640;
+
+  font-size: 12px;
+
+  padding: 9px 11px;
+
+  border-radius: 10px;
+}
+
+.tripsList {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 10px;
+}
+
+.noTrips {
+  background: white;
+
+  border: 1px solid #dce9eb;
+
+  border-radius: 14px;
+
+  padding: 18px;
+
+  text-align: center;
+
+  color: #70909a;
+
+  font-size: 14px;
+}
+
+/* -------------------------------- */
+/* EINZELNE FAHRT */
+/* -------------------------------- */
+
+.tripCard {
+  background: white;
+
+  border: 1px solid #dce9eb;
+
+  border-radius: 15px;
+
+  padding: 14px;
+
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, .05);
+}
+
+.tripTop {
+  display: flex;
+
+  justify-content: space-between;
+
+  align-items: flex-start;
+
+  gap: 10px;
+}
+
+.tripTitle {
+  font-weight: 800;
+
+  font-size: 16px;
+
+  color: var(--dark);
+}
+
+.tripDate {
+  margin-top: 3px;
+
+  font-size: 12px;
+
+  color: #77949d;
+}
+
+.tripStats {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, 1fr);
+
+  gap: 6px;
+
+  margin-top: 12px;
+
+  text-align: center;
+}
+
+.tripStats div {
+  background: #f4f8f9;
+
+  border-radius: 9px;
+
+  padding: 8px 3px;
+}
+
+.tripStats span {
+  display: block;
+
+  font-size: 10px;
+
+  color: #71919a;
+
+  font-weight: 700;
+}
+
+.tripStats strong {
+  display: block;
+
+  margin-top: 2px;
+
+  font-size: 14px;
+}
+
+.tripActions {
+  display: grid;
+
+  grid-template-columns:
+    1fr 1fr 1fr;
+
+  gap: 7px;
+
+  margin-top: 10px;
+}
+
+.tripActions button {
+  padding: 10px 5px;
+
+  font-size: 12px;
+
+  border-radius: 10px;
+}
+
+.viewTripBtn {
+  background: #e8f4f6;
+  color: var(--dark);
+}
+
+.exportTripBtn {
+  background: #eef6ef;
+  color: #39894a;
+}
+
+.deleteTripBtn {
+  background: #fff0f0;
+  color: #c74640;
+}
+
+/* -------------------------------- */
+/* LEAFLET */
+/* -------------------------------- */
+
+.leaflet-control-attribution {
+  font-size: 8px;
+}
+
+/* -------------------------------- */
+/* KLEINE DISPLAYS */
+/* -------------------------------- */
 
 @media (max-width: 380px) {
 
@@ -254,6 +453,23 @@ button.danger {
 
   .buttons button {
     font-size: 14px;
+  }
+
+  #map {
+    height: 52vh;
+    min-height: 380px;
+  }
+
+}
+
+/* -------------------------------- */
+/* IPHONE / TOUCH */
+/* -------------------------------- */
+
+@media (pointer: coarse) {
+
+  button {
+    min-height: 44px;
   }
 
 }
