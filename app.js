@@ -142,7 +142,7 @@ const RESTAURANT_OVERPASS_URLS = [
 ];
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const RESTAURANT_MIN_ZOOM = 14;
-const RESTAURANT_WATER_DISTANCE_METERS = 10;
+const RESTAURANT_WATER_DISTANCE_METERS = 30;
 const RESTAURANT_REQUEST_TIMEOUT_MS = 12000;
 const RESTAURANT_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
 
@@ -1028,7 +1028,7 @@ async function loadWaterRestaurants(forceRefresh = false) {
     setRestaurantMessage(
       restaurantFeatures.length
         ? `${restaurantFeatures.length} Gaststätten direkt am Wasser gefunden`
-        : 'Keine Gaststätten innerhalb von 10 m zum Wasser gefunden.'
+        : 'Keine Gaststätten innerhalb von 30 m zum Wasser gefunden.'
     );
     return;
   }
@@ -1088,7 +1088,7 @@ async function loadWaterRestaurants(forceRefresh = false) {
     setRestaurantMessage(
       restaurantFeatures.length
         ? `${restaurantFeatures.length} Gaststätten direkt am Wasser gefunden`
-        : 'Keine Gaststätten innerhalb von 10 m zum Wasser gefunden.'
+        : 'Keine Gaststätten innerhalb von 30 m zum Wasser gefunden.'
     );
   } catch (error) {
     if (error.name === 'AbortError') return;
