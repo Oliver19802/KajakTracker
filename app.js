@@ -41,7 +41,7 @@ const seamark = L.tileLayer(
     attribution:
       'Seezeichen &copy; OpenSeaMap'
   }
-).addTo(map);
+);
 
 
 /* =========================================================
@@ -81,6 +81,11 @@ const TRIPS_STORAGE_KEY = 'kajakTrips';
 
 const ACTIVE_TRIP_STORAGE_KEY = 'kajakActiveTrip';
 
+/* Kompatibilität mit der bereits begonnenen Kartenmodus-Erweiterung. */
+const MAP_MODE_STORAGE_KEY = 'kajakMapMode';
+
+const MAP_OVERLAYS_STORAGE_KEY = 'kajakMapOverlays';
+
 /* 50 km/h in m/s: darüber liegende Werte sind GPS-Ausreißer. */
 const MAX_VALID_SPEED = 50 / 3.6;
 
@@ -95,6 +100,15 @@ let line = L.polyline(
   }
 ).addTo(map);
 
+const previousTracksLayer = L.layerGroup().addTo(map);
+const navigationLayer = L.layerGroup().addTo(map);
+
+let previousTracksVisible = false;
+let navigationEnabled = false;
+let navigationTarget = null;
+let navigationRoute = null;
+let navigationControlElements = {};
+
 
 /* =========================================================
    HILFSFUNKTIONEN
@@ -102,6 +116,437 @@ let line = L.polyline(
 
 const $ = id =>
   document.getElementById(id);
+
+
+/* =========================================================
+   KARTENMODUS
+   ========================================================= */
+
+let mapModeButtons = {};
+
+
+function setMapMode(mode, save = true) {
+
+  const selectedMode =
+    mode === 'seamark'
+      ? 'seamark'
+      : 'map';
+
+
+  if (selectedMode === 'seamark') {
+
+    if (!map.hasLayer(seamark)) {
+
+      seamark.addTo(map);
+    }
+
+  } else if (map.hasLayer(seamark)) {
+
+    map.removeLayer(seamark);
+  }
+
+
+  Object.entries(mapModeButtons)
+    .forEach(([buttonMode, button]) => {
+
+      const isActive =
+        buttonMode === selectedMode;
+
+
+      button.classList.toggle(
+        'isActive',
+        isActive
+      );
+
+      button.setAttribute(
+        'aria-pressed',
+        String(isActive)
+      );
+    });
+
+
+  if (save) {
+
+    try {
+
+      localStorage.setItem(
+        MAP_MODE_STORAGE_KEY,
+        selectedMode
+      );
+
+    } catch (e) {
+
+      console.error(
+        'Fehler beim Speichern des Kartenmodus:',
+        e
+      );
+    }
+  }
+}
+
+
+function savedMapMode() {
+
+  try {
+
+    return localStorage.getItem(
+      MAP_MODE_STORAGE_KEY
+    );
+
+  } catch (e) {
+
+    console.error(
+      'Fehler beim Laden des Kartenmodus:',
+      e
+    );
+
+    return 'map';
+  }
+}
+
+
+function addMapModeControl() {
+
+  const control =
+    L.control({
+      position: 'topright'
+    });
+
+
+  control.onAdd = () => {
+
+    const container =
+      L.DomUtil.create(
+        'div',
+        'mapModeControl'
+      );
+
+
+    const mapButton =
+      document.createElement(
+        'button'
+      );
+
+    mapButton.type = 'button';
+
+    mapButton.textContent = '🗺 Karte';
+
+    mapButton.setAttribute(
+      'aria-label',
+      'Straßenkarte anzeigen'
+    );
+
+
+    const seamarkButton =
+      document.createElement(
+        'button'
+      );
+
+    seamarkButton.type = 'button';
+
+    seamarkButton.textContent = '⚓ Seekarte';
+
+    seamarkButton.setAttribute(
+      'aria-label',
+      'Seekarte mit Seezeichen anzeigen'
+    );
+
+
+    mapModeButtons = {
+      map: mapButton,
+      seamark: seamarkButton
+    };
+
+
+    L.DomEvent.on(
+      mapButton,
+      'click',
+      () => setMapMode('map')
+    );
+
+    L.DomEvent.on(
+      seamarkButton,
+      'click',
+      () => setMapMode('seamark')
+    );
+
+
+    container.appendChild(
+      mapButton
+    );
+
+    container.appendChild(
+      seamarkButton
+    );
+
+
+    L.DomEvent.disableClickPropagation(
+      container
+    );
+
+    L.DomEvent.disableScrollPropagation(
+      container
+    );
+
+    return container;
+  };
+
+
+  control.addTo(map);
+}
+
+
+function saveMapOverlays() {
+  try {
+    localStorage.setItem(
+      MAP_OVERLAYS_STORAGE_KEY,
+      JSON.stringify({
+        seamark: map.hasLayer(seamark),
+        previousTracks: previousTracksVisible
+      })
+    );
+  } catch (e) {
+    console.error('Fehler beim Speichern der Kartenebenen:', e);
+  }
+}
+
+function savedMapOverlays() {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(MAP_OVERLAYS_STORAGE_KEY) || '{}'
+    );
+    return saved && typeof saved === 'object' ? saved : {};
+  } catch (e) {
+    console.error('Fehler beim Laden der Kartenebenen:', e);
+    return {};
+  }
+}
+
+function setToolButton(name, active) {
+  const button = mapModeButtons[name];
+  if (!button) return;
+  button.classList.toggle('isActive', active);
+  button.setAttribute('aria-pressed', String(active));
+}
+
+function toggleSeamark() {
+  if (map.hasLayer(seamark)) map.removeLayer(seamark);
+  else seamark.addTo(map);
+  setToolButton('seamark', map.hasLayer(seamark));
+  saveMapOverlays();
+}
+
+function validTrackLatLngs(trip) {
+  if (!trip || !Array.isArray(trip.track)) return [];
+  return trip.track
+    .filter(p => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon)))
+    .map(p => [Number(p.lat), Number(p.lon)]);
+}
+
+function refreshPreviousTracks() {
+  previousTracksLayer.clearLayers();
+  if (!previousTracksVisible) return;
+
+  getTrips().forEach(trip => {
+    const latLngs = validTrackLatLngs(trip);
+    if (latLngs.length < 2) return;
+    L.polyline(latLngs, {
+      color: '#ffd400',
+      weight: 5,
+      opacity: 0.72,
+      interactive: false
+    }).addTo(previousTracksLayer);
+  });
+}
+
+function togglePreviousTracks() {
+  previousTracksVisible = !previousTracksVisible;
+  setToolButton('previousTracks', previousTracksVisible);
+  refreshPreviousTracks();
+  saveMapOverlays();
+}
+
+function setNavigationMessage(message, isError = false) {
+  const status = navigationControlElements.status;
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle('isError', isError);
+}
+
+function clearNavigation() {
+  navigationLayer.clearLayers();
+  navigationTarget = null;
+  navigationRoute = null;
+  setNavigationMessage('Ziel auf der Karte antippen');
+  if (navigationControlElements.start) {
+    navigationControlElements.start.disabled = true;
+    navigationControlElements.stop.hidden = true;
+  }
+}
+
+function setNavigationEnabled(enabled) {
+  navigationEnabled = enabled;
+  setToolButton('navigation', enabled);
+  if (!enabled) clearNavigation();
+  if (navigationControlElements.panel) {
+    navigationControlElements.panel.hidden = !enabled;
+  }
+}
+
+function routeDistanceMeters(coordinates) {
+  let distance = 0;
+  for (let i = 1; i < coordinates.length; i += 1) {
+    distance += L.latLng(coordinates[i - 1]).distanceTo(coordinates[i]);
+  }
+  return distance;
+}
+
+async function startWaterNavigation() {
+  if (!navigationTarget) return;
+
+  const routeFrom = lastPosition || (marker && marker.getLatLng());
+  if (!routeFrom) {
+    setNavigationMessage('Aktueller Standort ist noch nicht verfügbar.', true);
+    navigator.geolocation.getCurrentPosition(onPosition, onGeoError, {
+      enableHighAccuracy: true
+    });
+    return;
+  }
+
+  const start = Array.isArray(routeFrom)
+    ? { lat: routeFrom[0], lng: routeFrom[1] }
+    : routeFrom;
+  const params = new URLSearchParams({
+    lonlats: `${start.lng},${start.lat}|${navigationTarget.lng},${navigationTarget.lat}`,
+    profile: 'river',
+    alternativeidx: '0',
+    format: 'geojson'
+  });
+
+  setNavigationMessage('Wasserweg-Route wird berechnet …');
+  navigationControlElements.start.disabled = true;
+
+  try {
+    /* Öffentlicher BRouter-Dienst mit dem Wasserwegprofil "river". */
+    const response = await fetch(`https://brouter.de/brouter?${params}`);
+    if (!response.ok) throw new Error(`Routing-HTTP ${response.status}`);
+
+    const geojson = await response.json();
+    const feature = geojson.type === 'FeatureCollection'
+      ? geojson.features?.[0]
+      : geojson;
+    const geometry = feature?.geometry;
+    if (!geometry || geometry.type !== 'LineString' || geometry.coordinates.length < 2) {
+      throw new Error('Keine Wasserweg-Geometrie empfangen');
+    }
+
+    const latLngs = geometry.coordinates.map(c => [Number(c[1]), Number(c[0])]);
+    if (latLngs.some(c => !Number.isFinite(c[0]) || !Number.isFinite(c[1]))) {
+      throw new Error('Ungültige Routendaten');
+    }
+
+    navigationRoute = L.polyline(latLngs, {
+      color: '#e52d27',
+      weight: 6,
+      opacity: 0.9,
+      interactive: false
+    }).addTo(navigationLayer);
+    navigationRoute.bringToFront();
+
+    const reportedDistance = Number(feature.properties?.['track-length']);
+    const distance = Number.isFinite(reportedDistance)
+      ? reportedDistance
+      : routeDistanceMeters(latLngs);
+    setNavigationMessage(`Wasserweg-Route: ${fmtKm(distance)} km`);
+    navigationControlElements.stop.hidden = false;
+    map.fitBounds(navigationRoute.getBounds(), { padding: [30, 30] });
+  } catch (error) {
+    console.error('Wasserweg-Routing fehlgeschlagen:', error);
+    setNavigationMessage(
+      'Keine Wasserweg-Route gefunden. Kein Straßenrouting als Ersatz.',
+      true
+    );
+  } finally {
+    navigationControlElements.start.disabled = !navigationTarget;
+  }
+}
+
+function chooseNavigationTarget(event) {
+  if (!navigationEnabled) return;
+  navigationLayer.clearLayers();
+  navigationRoute = null;
+  navigationTarget = event.latlng;
+  L.marker(navigationTarget)
+    .addTo(navigationLayer)
+    .bindPopup('Navigationsziel')
+    .openPopup();
+  navigationControlElements.start.disabled = false;
+  navigationControlElements.stop.hidden = true;
+  setNavigationMessage('Ziel gewählt');
+}
+
+function addMapToolsControl() {
+  const control = L.control({ position: 'topright' });
+  control.onAdd = () => {
+    const container = L.DomUtil.create('div', 'mapToolsControl');
+    const tools = [
+      ['previousTracks', '🟡 Bereits gefahrene Strecken', togglePreviousTracks],
+      ['seamark', '⚓ OpenSeaMap', toggleSeamark],
+      ['navigation', '🧭 Navigation', () => setNavigationEnabled(!navigationEnabled)]
+    ];
+
+    tools.forEach(([name, text, handler]) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = text;
+      button.setAttribute('aria-pressed', 'false');
+      L.DomEvent.on(button, 'click', handler);
+      mapModeButtons[name] = button;
+      container.appendChild(button);
+    });
+
+    const panel = document.createElement('div');
+    panel.className = 'navigationPanel';
+    panel.hidden = true;
+    const status = document.createElement('div');
+    status.className = 'navigationStatus';
+    status.textContent = 'Ziel auf der Karte antippen';
+    const actions = document.createElement('div');
+    actions.className = 'navigationActions';
+    const startButton = document.createElement('button');
+    startButton.type = 'button';
+    startButton.textContent = 'Navigation starten';
+    startButton.disabled = true;
+    L.DomEvent.on(startButton, 'click', startWaterNavigation);
+    const stopButton = document.createElement('button');
+    stopButton.type = 'button';
+    stopButton.textContent = 'Beenden';
+    stopButton.hidden = true;
+    L.DomEvent.on(stopButton, 'click', clearNavigation);
+    actions.append(startButton, stopButton);
+    panel.append(status, actions);
+    container.appendChild(panel);
+    navigationControlElements = {
+      panel,
+      status,
+      start: startButton,
+      stop: stopButton
+    };
+
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+    return container;
+  };
+  control.addTo(map);
+}
+
+addMapToolsControl();
+map.on('click', chooseNavigationTarget);
+const initialOverlays = savedMapOverlays();
+if (initialOverlays.seamark) seamark.addTo(map);
+previousTracksVisible = Boolean(initialOverlays.previousTracks);
+setToolButton('seamark', map.hasLayer(seamark));
+setToolButton('previousTracks', previousTracksVisible);
 
 
 /* Zahl deutsch formatieren */
@@ -1001,6 +1446,8 @@ function saveTrip() {
 
   renderTrips();
 
+  refreshPreviousTracks();
+
 
   console.log(
     'Fahrt gespeichert:',
@@ -1270,12 +1717,10 @@ function viewTrip(id) {
 
   tripMarkers.clearLayers();
 
-
-  /*
-    Aktuelle Linie löschen.
-  */
-
-  line.setLatLngs([]);
+  /* Eine laufende Aufzeichnung bleibt als eigene blaue Linie sichtbar. */
+  if (state === 'idle') {
+    line.setLatLngs([]);
+  }
 
 
   /*
@@ -1295,9 +1740,13 @@ function viewTrip(id) {
     Neue Linie erzeugen.
   */
 
-  line.setLatLngs(
-    latLngs
-  );
+  L.polyline(
+    latLngs,
+    {
+      color: '#147aa1',
+      weight: 5
+    }
+  ).addTo(tripMarkers);
 
 
   /*
@@ -1728,6 +2177,8 @@ function deleteTrip(id) {
 
 
   renderTrips();
+
+  refreshPreviousTracks();
 }
 
 
@@ -1768,6 +2219,8 @@ function clearAllTrips() {
 
 
   renderTrips();
+
+  refreshPreviousTracks();
 }
 
 
@@ -1864,6 +2317,8 @@ restoreActiveTrip();
 updateUI();
 
 renderTrips();
+
+refreshPreviousTracks();
 
 
 /*

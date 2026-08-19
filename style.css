@@ -290,6 +290,66 @@ button.danger {
   font-size: 8px;
 }
 
+.mapToolsControl {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .16);
+}
+
+.mapToolsControl > button {
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 0;
+  background: white;
+  color: var(--dark);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mapToolsControl > button + button {
+  border-top: 1px solid var(--border);
+}
+
+.mapToolsControl button.isActive {
+  background: var(--teal);
+  color: white;
+}
+
+.navigationPanel {
+  max-width: 230px;
+  padding: 9px;
+  border-top: 1px solid var(--border);
+  background: white;
+}
+
+.navigationStatus {
+  margin-bottom: 7px;
+  color: var(--dark);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.navigationStatus.isError {
+  color: #b52c27;
+}
+
+.navigationActions {
+  display: flex;
+  gap: 6px;
+}
+
+.navigationActions button {
+  min-height: 38px;
+  padding: 7px 8px;
+  font-size: 11px;
+}
+
 /* Kleine iPhones */
 
 @media (max-width: 380px) {
