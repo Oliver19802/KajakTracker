@@ -140,6 +140,11 @@ const POI_DB_NAME = 'kajaktracker-pois';
 const POI_DB_VERSION = 1;
 const POI_STORE_NAME = 'areas';
 const POI_CURRENT_AREA_KEY = 'current';
+const POI_REGION_INDEX_URL = 'poi-data/regions.json';
+const POI_REGION_DATA = {
+  brandenburg: { label: 'Brandenburg', url: 'poi-data/brandenburg-pois.json.gz' },
+  niedersachsen: { label: 'Niedersachsen', url: 'poi-data/niedersachsen-pois.json.gz' }
+};
 const SPREEWALD_POI_URL = 'offline-test/data/spreewald-pois.json';
 const SPREEWALD_POI_BOUNDS = L.latLngBounds(
   [51.5655066, 13.7128759],
@@ -164,6 +169,12 @@ let poiAbortController = null;
 let poiRestorePromise = null;
 let poiLoadInFlight = false;
 let loadedPoiSource = '';
+let poiRegionVersion = '';
+let poiRegions = [];
+let poiRegionsPromise = null;
+let activePoiRegionId = '';
+const regionalPoiMemory = new Map();
+const regionalPoiLoads = new Map();
 let spreewaldPoiFeatures = [];
 let spreewaldPoiPromise = null;
 let wasInSpreewaldPoiArea = false;
@@ -608,12 +619,12 @@ function openPoiDatabase() {
   });
 }
 
-async function readStoredPoiArea() {
+async function readStoredPoiRecord(id) {
   const database = await openPoiDatabase();
   try {
     return await new Promise((resolve, reject) => {
       const transaction = database.transaction(POI_STORE_NAME, 'readonly');
-      const request = transaction.objectStore(POI_STORE_NAME).get(POI_CURRENT_AREA_KEY);
+      const request = transaction.objectStore(POI_STORE_NAME).get(id);
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
     });
@@ -622,8 +633,26 @@ async function readStoredPoiArea() {
   }
 }
 
-async function storePoiArea() {
+function readStoredPoiArea() {
+  return readStoredPoiRecord(POI_CURRENT_AREA_KEY);
+}
+
+async function storePoiRecord(record) {
   const database = await openPoiDatabase();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(POI_STORE_NAME, 'readwrite');
+      transaction.objectStore(POI_STORE_NAME).put(record);
+      transaction.oncomplete = resolve;
+      transaction.onabort = () => reject(transaction.error);
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+async function storePoiArea() {
   const record = {
     id: POI_CURRENT_AREA_KEY,
     center: { lat: loadedPoiCenter.lat, lng: loadedPoiCenter.lng },
@@ -637,17 +666,7 @@ async function storePoiArea() {
       tags: feature.tags
     }))
   };
-  try {
-    await new Promise((resolve, reject) => {
-      const transaction = database.transaction(POI_STORE_NAME, 'readwrite');
-      transaction.objectStore(POI_STORE_NAME).put(record);
-      transaction.oncomplete = resolve;
-      transaction.onabort = () => reject(transaction.error);
-      transaction.onerror = () => reject(transaction.error);
-    });
-  } finally {
-    database.close();
-  }
+  await storePoiRecord(record);
 }
 
 function storedPoiFeatures(pois) {
@@ -664,8 +683,144 @@ function storedPoiFeatures(pois) {
     const lat = Number(poi.lat);
     const lon = Number(poi.lon ?? poi.lng);
     if (!POI_TYPES[kind] || !Number.isFinite(lat) || !Number.isFinite(lon)) return [];
-    return [{ kind, latLng: L.latLng(lat, lon), tags: poi.tags || {} }];
+    const tags = { ...(poi.tags || {}) };
+    ['name', 'opening_hours', 'website', 'phone', 'operator', 'access', 'fee'].forEach(field => {
+      if (poi[field] && !tags[field]) tags[field] = poi[field];
+    });
+    return [{ kind, latLng: L.latLng(lat, lon), tags }];
   });
+}
+
+function pointInPoiRing(point, coordinates) {
+  let inside = false;
+  for (let index = 0, previous = coordinates.length - 1; index < coordinates.length;
+      previous = index++) {
+    const [x1, y1] = coordinates[index];
+    const [x2, y2] = coordinates[previous];
+    if ((y1 > point.lat) !== (y2 > point.lat) &&
+        point.lng < (x2 - x1) * (point.lat - y1) / (y2 - y1) + x1) inside = !inside;
+  }
+  return inside;
+}
+
+function poiRegionAt(point) {
+  if (!point) return null;
+  const latLng = L.latLng(point);
+  return poiRegions.find(region => {
+    const [west, south, east, north] = region.bbox;
+    if (latLng.lng < west || latLng.lng > east || latLng.lat < south || latLng.lat > north) return false;
+    const inOuterRing = region.rings.some(ring => !ring.hole && pointInPoiRing(latLng, ring.coordinates));
+    const inHole = region.rings.some(ring => ring.hole && pointInPoiRing(latLng, ring.coordinates));
+    return inOuterRing && !inHole;
+  }) || null;
+}
+
+function currentPoiRegion() {
+  const center = map.getCenter();
+  const centerRegion = poiRegionAt(center);
+  if (centerRegion) return centerRegion;
+  if (!lastPosition || center.distanceTo(L.latLng(lastPosition)) > POI_RADIUS_METERS) return null;
+  return poiRegionAt(lastPosition);
+}
+
+async function loadPoiRegions() {
+  try {
+    const response = await fetch(POI_REGION_INDEX_URL, { cache: 'force-cache' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    poiRegionVersion = String(data.version || '');
+    poiRegions = (data.regions || []).filter(region => POI_REGION_DATA[region.id]);
+    return true;
+  } catch (error) {
+    console.error('POI-Regionsgrenzen konnten nicht geladen werden:', error);
+    return false;
+  }
+}
+
+function storedRegionalPois(features) {
+  return features.map(feature => ({
+    kind: feature.kind,
+    lat: feature.latLng.lat,
+    lon: feature.latLng.lng,
+    tags: feature.tags
+  }));
+}
+
+async function parseRegionalPoiResponse(response) {
+  const compressed = await response.arrayBuffer();
+  const bytes = new Uint8Array(compressed);
+  if (bytes[0] === 0x5b || bytes[0] === 0x7b) {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+  if (typeof DecompressionStream !== 'function') {
+    throw new Error('GZIP wird von diesem Browser nicht unterstützt');
+  }
+  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(stream).text());
+}
+
+async function loadRegionalPoiFeatures(region) {
+  if (regionalPoiMemory.has(region.id)) return regionalPoiMemory.get(region.id);
+  if (regionalPoiLoads.has(region.id)) return regionalPoiLoads.get(region.id);
+  const loading = (async () => {
+    const key = `region:${region.id}`;
+    const stored = await readStoredPoiRecord(key);
+    if (stored?.version === poiRegionVersion && Array.isArray(stored.pois)) {
+      const features = storedPoiFeatures(stored.pois);
+      regionalPoiMemory.set(region.id, features);
+      return features;
+    }
+    if (!navigator.onLine) throw new Error(`${region.label}-POIs wurden noch nicht heruntergeladen`);
+    setPoiMessage(`${region.label}-POIs werden einmalig geladen …`);
+    const response = await fetch(POI_REGION_DATA[region.id].url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const features = storedPoiFeatures(await parseRegionalPoiResponse(response));
+    await storePoiRecord({
+      id: key,
+      regionId: region.id,
+      version: poiRegionVersion,
+      timestamp: Date.now(),
+      pois: storedRegionalPois(features)
+    });
+    regionalPoiMemory.set(region.id, features);
+    return features;
+  })();
+  regionalPoiLoads.set(region.id, loading);
+  try {
+    return await loading;
+  } finally {
+    regionalPoiLoads.delete(region.id);
+  }
+}
+
+async function activateRegionalPois() {
+  await poiRegionsPromise;
+  const region = currentPoiRegion();
+  activePoiRegionId = region?.id || '';
+  if (!region) return false;
+  if (!activePoiTypes().length) return true;
+  try {
+    const features = await loadRegionalPoiFeatures(region);
+    if (currentPoiRegion()?.id !== region.id) return true;
+    const source = `region:${region.id}`;
+    if (loadedPoiSource !== source) {
+      const [west, south, east, north] = region.bbox;
+      applyPoiDataset(features, [(south + north) / 2, (west + east) / 2], 0,
+        Date.now(), Object.keys(POI_TYPES), source);
+    } else {
+      updatePoiLayerContents();
+      updatePoiLayerVisibility();
+    }
+    setPoiMessage(`${region.label}-POIs lokal geladen.`);
+  } catch (error) {
+    if (region.id === 'brandenburg' && inSpreewaldPoiArea() && await activateSpreewaldPois()) {
+      setPoiMessage('Spreewald-POIs als Fallback geladen.');
+      return true;
+    }
+    console.error(`${region.label}-POIs konnten nicht geladen werden:`, error);
+    setPoiMessage(`${region.label}-POIs sind offline noch nicht gespeichert.`, true);
+  }
+  return true;
 }
 
 function inSpreewaldPoiArea() {
@@ -928,6 +1083,7 @@ function poiLoadCenter() {
 
 async function loadPois(forceRefresh = false) {
   await poiRestorePromise;
+  if (await activateRegionalPois()) return;
   if (await activateSpreewaldPois()) return;
   if (poiLoadInFlight && !forceRefresh) return;
   const types = activePoiTypes();
@@ -942,7 +1098,8 @@ async function loadPois(forceRefresh = false) {
   const cacheIsFresh = Date.now() - loadedPoiAt <= POI_CACHE_MAX_AGE_MS;
   const gpsMovedTooFar = Boolean(lastPosition && loadedPoiCenter &&
     loadedPoiCenter.distanceTo(L.latLng(lastPosition[0], lastPosition[1])) > POI_RELOAD_DISTANCE_METERS);
-  if (!forceRefresh && loadedPoiSource !== 'spreewald' && cacheIsFresh && loadedPoiCenter &&
+  const fixedLocalSource = loadedPoiSource === 'spreewald' || loadedPoiSource.startsWith('region:');
+  if (!forceRefresh && !fixedLocalSource && cacheIsFresh && loadedPoiCenter &&
       !gpsMovedTooFar && !missingTypes.length) {
     updatePoiLayerVisibility();
     return;
@@ -953,7 +1110,7 @@ async function loadPois(forceRefresh = false) {
       'POIs benötigen für die erste Abfrage eine Internetverbindung.', !poiFeatures.length);
     return;
   }
-  const refreshArea = forceRefresh || loadedPoiSource === 'spreewald' || !cacheIsFresh ||
+  const refreshArea = forceRefresh || fixedLocalSource || !cacheIsFresh ||
     !loadedPoiCenter || gpsMovedTooFar;
   const requestedTypes = refreshArea ? types : missingTypes;
   poiAbortController?.abort();
@@ -1340,10 +1497,15 @@ map.on('click', closePoiPanel);
 map.on('moveend zoomend', () => {
   updatePoiLayerContents();
   updatePoiLayerVisibility();
-  const insideSpreewald = inSpreewaldPoiArea();
-  if (insideSpreewald) activateSpreewaldPois();
-  else if (wasInSpreewaldPoiArea && activePoiTypes().length) schedulePoiLoad();
-  wasInSpreewaldPoiArea = insideSpreewald;
+  if (!activePoiTypes().length) return;
+  const previousRegionId = activePoiRegionId;
+  activateRegionalPois().then(handled => {
+    if (handled) return;
+    const insideSpreewald = inSpreewaldPoiArea();
+    if (insideSpreewald) activateSpreewaldPois();
+    else if (previousRegionId || wasInSpreewaldPoiArea) schedulePoiLoad();
+    wasInSpreewaldPoiArea = insideSpreewald;
+  });
 });
 const initialOverlays = savedMapOverlays();
 if (initialOverlays.seamark && navigator.onLine) seamark.addTo(map);
@@ -1352,6 +1514,7 @@ setToolButton('seamark', map.hasLayer(seamark));
 setToolButton('previousTracks', previousTracksVisible);
 locksVisible = poiEnabled.lock;
 weirsVisible = poiEnabled.weir;
+poiRegionsPromise = loadPoiRegions();
 spreewaldPoiPromise = loadSpreewaldPois();
 poiRestorePromise = restorePoisFromIndexedDb();
 wasInSpreewaldPoiArea = inSpreewaldPoiArea();
@@ -1891,12 +2054,12 @@ function onPosition(pos) {
 
   lastPosition = c;
 
-  if (inSpreewaldPoiArea()) {
-    activateSpreewaldPois();
-  } else if (!poiLoadInFlight && activePoiTypes().length && loadedPoiCenter &&
-      loadedPoiCenter.distanceTo(L.latLng(c)) > POI_RELOAD_DISTANCE_METERS) {
-    schedulePoiLoad();
-  }
+  if (activePoiTypes().length) activateRegionalPois().then(handled => {
+    if (handled) return;
+    if (inSpreewaldPoiArea()) activateSpreewaldPois();
+    else if (!poiLoadInFlight && loadedPoiCenter &&
+        loadedPoiCenter.distanceTo(L.latLng(c)) > POI_RELOAD_DISTANCE_METERS) schedulePoiLoad();
+  });
 
 
   /*
