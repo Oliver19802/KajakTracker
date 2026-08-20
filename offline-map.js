@@ -6,8 +6,10 @@
   const MAP_STORE = 'maps';
   const CHUNK_STORE = 'chunks';
   const MAP_ID = 'spreewald';
+  const DOWNLOAD_ID = `${MAP_ID}:download`;
   const CHUNK_SIZE = 512 * 1024;
   const EXPECTED_SIZE = 33356774;
+  const MAX_CHUNK_ATTEMPTS = 3;
   const STORAGE_RESERVE = 20 * 1024 * 1024;
   const MAP_URL = 'offline-test/data/spreewald-z10-15.pmtiles';
   const CENTER = [14.149, 51.835];
@@ -49,6 +51,27 @@
   async function getMetadata(database) {
     const tx = database.transaction(MAP_STORE, 'readonly');
     return requestResult(tx.objectStore(MAP_STORE).get(MAP_ID));
+  }
+
+  async function getDownloadMetadata(database) {
+    const tx = database.transaction(MAP_STORE, 'readonly');
+    return requestResult(tx.objectStore(MAP_STORE).get(DOWNLOAD_ID));
+  }
+
+  async function putMapRecord(database, record) {
+    const tx = database.transaction(MAP_STORE, 'readwrite');
+    const done = transactionDone(tx);
+    tx.objectStore(MAP_STORE).put(record);
+    await done;
+  }
+
+  async function commitDownloadedMap(database, record) {
+    const tx = database.transaction(MAP_STORE, 'readwrite');
+    const done = transactionDone(tx);
+    const store = tx.objectStore(MAP_STORE);
+    store.put(record);
+    store.delete(DOWNLOAD_ID);
+    await done;
   }
 
   async function putChunk(database, revision, index, data) {
@@ -97,9 +120,12 @@
   async function deleteMap(database) {
     const metadata = await getMetadata(database);
     if (metadata?.revision) await deleteRevision(database, metadata.revision);
+    const download = await getDownloadMetadata(database);
+    if (download?.revision && download.revision !== metadata?.revision) await deleteRevision(database, download.revision);
     const tx = database.transaction(MAP_STORE, 'readwrite');
     const done = transactionDone(tx);
     tx.objectStore(MAP_STORE).delete(MAP_ID);
+    tx.objectStore(MAP_STORE).delete(DOWNLOAD_ID);
     await done;
   }
 
@@ -335,26 +361,10 @@
       return estimate.quota - estimate.usage >= EXPECTED_SIZE + STORAGE_RESERVE;
     }
 
-    async function saveDownloadChunk(revision, chunkIndex, bytes) {
-      const copy = bytes.slice().buffer;
-      await putChunk(database, revision, chunkIndex, copy);
-    }
-
-    function validateResponse(response) {
-      if (!response.ok) throw new Error(`HTTP ${response.status} beim Kartendownload`);
-      const contentLengthHeader = response.headers.get('Content-Length');
-      const contentLength = contentLengthHeader === null ? null : Number(contentLengthHeader);
-      if (contentLength !== null && (!Number.isFinite(contentLength) || contentLength !== EXPECTED_SIZE)) {
-        throw new Error(`Unerwartete Dateigröße: ${contentLengthHeader} statt ${EXPECTED_SIZE} Bytes`);
-      }
-      return contentLength || EXPECTED_SIZE;
-    }
-
-    async function fetchMapResponse() {
+    function mapUrl() {
       const url = new URL(MAP_URL, document.baseURI);
       if (url.origin !== location.origin) throw new Error('Offline-Karten-URL hat nicht denselben Ursprung');
-      const response = await fetch(url, { cache: 'no-store' });
-      return { response, contentLength: validateResponse(response) };
+      return url;
     }
 
     function updateDownloadProgress(received, total) {
@@ -362,59 +372,85 @@
       setStatus(`Offline-Karte wird geladen … ${formatBytes(received)} / ${formatBytes(total)} · ${percent} %`);
     }
 
-    async function downloadWithStream(response, contentLength, revision, progress) {
-      if (!response.body || typeof response.body.getReader !== 'function') {
-        const error = new Error('ReadableStream ist nicht verfügbar');
-        error.name = 'ReadableStreamUnavailableError';
-        throw error;
-      }
-      const reader = response.body.getReader();
-      let pending = new Uint8Array(0);
-      try {
-        while (true) {
-          const result = await reader.read();
-          if (result.done) break;
-          if (!(result.value instanceof Uint8Array)) throw new TypeError('Ungültiger Datenblock im Download-Stream');
-          progress.received += result.value.byteLength;
-          const combined = new Uint8Array(pending.byteLength + result.value.byteLength);
-          combined.set(pending);
-          combined.set(result.value, pending.byteLength);
-          pending = combined;
-          while (pending.byteLength >= CHUNK_SIZE) {
-            await saveDownloadChunk(revision, progress.chunkIndex++, pending.subarray(0, CHUNK_SIZE));
-            pending = pending.slice(CHUNK_SIZE);
-          }
-          updateDownloadProgress(progress.received, contentLength);
+    function expectedChunkLength(index) {
+      return Math.min(CHUNK_SIZE, EXPECTED_SIZE - index * CHUNK_SIZE);
+    }
+
+    async function inspectStoredChunks(revision) {
+      const chunkCount = Math.ceil(EXPECTED_SIZE / CHUNK_SIZE);
+      const complete = new Set();
+      let storedBytes = 0;
+      for (let index = 0; index < chunkCount; index++) {
+        const record = await getChunk(database, revision, index);
+        if (record?.data?.byteLength === expectedChunkLength(index)) {
+          complete.add(index);
+          storedBytes += record.data.byteLength;
         }
-        if (pending.byteLength) await saveDownloadChunk(revision, progress.chunkIndex++, pending);
-      } catch (error) {
-        await reader.cancel(error).catch(() => {});
-        throw error;
-      } finally {
-        reader.releaseLock();
       }
+      return { complete, storedBytes };
     }
 
-    async function downloadWithArrayBuffer(response, contentLength, revision, progress) {
-      const buffer = await response.arrayBuffer();
-      progress.received = buffer.byteLength;
-      if (progress.received !== contentLength || progress.received !== EXPECTED_SIZE) {
-        throw new Error(`Offline-Datei unvollständig: ${progress.received} von ${EXPECTED_SIZE} Bytes`);
+    async function downloadRangeBlock(revision, index) {
+      const chunkCount = Math.ceil(EXPECTED_SIZE / CHUNK_SIZE);
+      const start = index * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, EXPECTED_SIZE) - 1;
+      const expectedLength = end - start + 1;
+      let lastError;
+      for (let attempt = 1; attempt <= MAX_CHUNK_ATTEMPTS; attempt++) {
+        let response;
+        let receivedBytes = 0;
+        let contentRange = null;
+        try {
+          response = await fetch(mapUrl(), {
+            cache: 'no-store',
+            headers: { Range: `bytes=${start}-${end}` }
+          });
+          contentRange = response.headers.get('Content-Range');
+          if (response.status !== 206) throw new Error(`HTTP ${response.status} statt 206`);
+          const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(contentRange || '');
+          if (!match || Number(match[1]) !== start || Number(match[2]) !== end || Number(match[3]) !== EXPECTED_SIZE) {
+            throw new Error(`Content-Range ungültig: ${contentRange || 'fehlt'}`);
+          }
+          const buffer = await response.arrayBuffer();
+          receivedBytes = buffer.byteLength;
+          if (receivedBytes !== expectedLength) throw new Error(`${receivedBytes} statt ${expectedLength} Bytes empfangen`);
+          await putChunk(database, revision, index, buffer);
+          return receivedBytes;
+        } catch (error) {
+          lastError = error;
+          console.warn('Offline-Range-Block fehlgeschlagen:', {
+            block: index + 1,
+            blockCount: chunkCount,
+            startByte: start,
+            endByte: end,
+            receivedBytes,
+            attempt,
+            httpStatus: response?.status ?? 0,
+            contentRange,
+            error: error?.message
+          });
+        }
       }
-      for (let offset = 0; offset < buffer.byteLength; offset += CHUNK_SIZE) {
-        const length = Math.min(CHUNK_SIZE, buffer.byteLength - offset);
-        await saveDownloadChunk(revision, progress.chunkIndex++, new Uint8Array(buffer, offset, length));
-        updateDownloadProgress(Math.min(offset + length, buffer.byteLength), contentLength);
-      }
+      const error = new Error(`Offline-Download fehlgeschlagen bei Block ${index + 1} von ${chunkCount}.`);
+      error.cause = lastError;
+      error.block = { index, start, end };
+      throw error;
     }
 
-    async function verifyDownloadedRevision(revision, size, chunkCount) {
-      if (size !== EXPECTED_SIZE) throw new Error(`Größenprüfung fehlgeschlagen: ${size} Bytes`);
+    async function verifyDownloadedRevision(revision) {
       const expectedChunkCount = Math.ceil(EXPECTED_SIZE / CHUNK_SIZE);
       const storedChunkCount = await countRevisionChunks(database, revision);
-      if (chunkCount !== expectedChunkCount || storedChunkCount !== expectedChunkCount) {
+      if (storedChunkCount !== expectedChunkCount) {
         throw new Error(`Chunk-Prüfung fehlgeschlagen: ${storedChunkCount} von ${expectedChunkCount}`);
       }
+      let storedBytes = 0;
+      for (let index = 0; index < expectedChunkCount; index++) {
+        const chunk = await getChunk(database, revision, index);
+        const expectedLength = expectedChunkLength(index);
+        if (!chunk?.data || chunk.data.byteLength !== expectedLength) throw new Error(`Block ${index + 1} ist unvollständig`);
+        storedBytes += chunk.data.byteLength;
+      }
+      if (storedBytes !== EXPECTED_SIZE) throw new Error(`Größenprüfung fehlgeschlagen: ${storedBytes} Bytes`);
       const first = await getChunk(database, revision, 0);
       const last = await getChunk(database, revision, expectedChunkCount - 1);
       if (!first?.data || !last?.data) throw new Error('Erster oder letzter Offline-Kartenblock fehlt');
@@ -425,6 +461,7 @@
       const header = new Uint8Array(first.data, 0, 8);
       const magic = String.fromCharCode(...header.subarray(0, 7));
       if (magic !== 'PMTiles' || header[7] !== 3) throw new Error('PMTiles-v3-Header ist ungültig');
+      return { storedBytes, chunkCount: storedChunkCount };
     }
 
     async function downloadMap() {
@@ -432,42 +469,39 @@
       downloadRunning = true;
       updatePanel();
       const oldMetadata = metadata;
-      const revision = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      let downloadMetadata;
+      let revision;
       const progress = { received: 0, chunkIndex: 0 };
       let persistenceGranted = null;
       let phase = 'Speicherprüfung';
-      let method = 'stream';
       try {
         if (!(await storageIsSufficient())) throw new Error('Nicht genügend Speicher für die Offline-Karte.');
         if (navigator.storage?.persist) {
           try { persistenceGranted = await navigator.storage.persist(); } catch (error) { console.warn('Persistenter Speicher nicht verfügbar:', error); }
         }
-        setStatus('Offline-Karte wird geladen … 0 MB / 32 MB · 0 %');
-        phase = 'Streaming-Download';
-        let download = await fetchMapResponse();
-        try {
-          await downloadWithStream(download.response, download.contentLength, revision, progress);
-        } catch (streamError) {
-          console.warn('Streaming-Download fehlgeschlagen, ArrayBuffer-Fallback wird verwendet:', streamError);
-          phase = 'Fallback-Vorbereitung';
-          if (download.response.body && !download.response.body.locked) {
-            await download.response.body.cancel(streamError).catch(() => {});
-          }
-          await deleteRevision(database, revision);
-          progress.received = 0;
-          progress.chunkIndex = 0;
-          method = 'arrayBuffer';
-          download = await fetchMapResponse();
-          phase = 'ArrayBuffer-Download';
-          await downloadWithArrayBuffer(download.response, download.contentLength, revision, progress);
+        downloadMetadata = await getDownloadMetadata(database);
+        const compatible = downloadMetadata?.size === EXPECTED_SIZE && downloadMetadata?.chunkSize === CHUNK_SIZE;
+        revision = compatible ? downloadMetadata.revision : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        if (downloadMetadata?.revision && !compatible) await deleteRevision(database, downloadMetadata.revision);
+        if (!compatible) {
+          downloadMetadata = { id: DOWNLOAD_ID, revision, size: EXPECTED_SIZE, chunkSize: CHUNK_SIZE, chunkCount: Math.ceil(EXPECTED_SIZE / CHUNK_SIZE), complete: false };
+          await putMapRecord(database, downloadMetadata);
+        }
+        phase = 'Range-Download';
+        const stored = await inspectStoredChunks(revision);
+        progress.received = stored.storedBytes;
+        progress.chunkIndex = stored.complete.size;
+        updateDownloadProgress(progress.received, EXPECTED_SIZE);
+        for (let index = 0; index < downloadMetadata.chunkCount; index++) {
+          if (stored.complete.has(index)) continue;
+          progress.received += await downloadRangeBlock(revision, index);
+          progress.chunkIndex++;
+          updateDownloadProgress(progress.received, EXPECTED_SIZE);
         }
         phase = 'Vollständigkeitsprüfung';
-        await verifyDownloadedRevision(revision, progress.received, progress.chunkIndex);
-        const newMetadata = { id: MAP_ID, revision, size: progress.received, savedAt: new Date().toISOString(), chunkSize: CHUNK_SIZE, chunkCount: progress.chunkIndex, complete: true, persistenceGranted, preferredMode: oldMetadata?.preferredMode || 'online', downloadMethod: method };
-        const tx = database.transaction(MAP_STORE, 'readwrite');
-        const done = transactionDone(tx);
-        tx.objectStore(MAP_STORE).put(newMetadata);
-        await done;
+        const verified = await verifyDownloadedRevision(revision);
+        const newMetadata = { id: MAP_ID, revision, size: verified.storedBytes, savedAt: new Date().toISOString(), chunkSize: CHUNK_SIZE, chunkCount: verified.chunkCount, complete: true, persistenceGranted, preferredMode: oldMetadata?.preferredMode || 'online', downloadMethod: 'range' };
+        await commitDownloadedMap(database, newMetadata);
         metadata = newMetadata;
         if (oldMetadata?.revision && oldMetadata.revision !== revision) await deleteRevision(database, oldMetadata.revision);
         setStatus('✅ Offline verfügbar');
@@ -481,7 +515,6 @@
           receivedBytes: progress.received,
           storedChunks: progress.chunkIndex
         });
-        await deleteRevision(database, revision).catch(() => {});
         metadata = oldMetadata;
         const errorName = error?.name || 'Fehler';
         const errorMessage = error?.message || 'Offline-Karte konnte nicht vollständig gespeichert werden.';
