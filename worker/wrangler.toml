@@ -1,0 +1,24 @@
+name = "kajaktracker-offline-maps"
+main = "src/index.js"
+compatibility_date = "2026-08-20"
+workers_dev = true
+
+[vars]
+GITHUB_OWNER = "Oliver19802"
+GITHUB_REPO = "KajakTracker"
+GITHUB_WORKFLOW = "build-offline-map.yml"
+GITHUB_BRANCH = "main"
+ALLOWED_ORIGIN = "https://oliver19802.github.io"
+ALLOW_LOCALHOST = "false"
+
+[[r2_buckets]]
+binding = "OFFLINE_MAPS"
+bucket_name = "kajaktracker-offline-maps"
+
+[[ratelimits]]
+name = "BUILD_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 2, period = 60 }
+
+[limits]
+cpu_ms = 10
