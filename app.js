@@ -141,10 +141,6 @@ const POI_DB_VERSION = 1;
 const POI_STORE_NAME = 'areas';
 const POI_CURRENT_AREA_KEY = 'current';
 const POI_REGION_INDEX_URL = 'poi-data/regions.json';
-const POI_REGION_DATA = {
-  brandenburg: { label: 'Brandenburg', url: 'poi-data/brandenburg-pois.json.gz' },
-  niedersachsen: { label: 'Niedersachsen', url: 'poi-data/niedersachsen-pois.json.gz' }
-};
 const SPREEWALD_POI_URL = 'offline-test/data/spreewald-pois.json';
 const SPREEWALD_POI_BOUNDS = L.latLngBounds(
   [51.5655066, 13.7128759],
@@ -169,10 +165,9 @@ let poiAbortController = null;
 let poiRestorePromise = null;
 let poiLoadInFlight = false;
 let loadedPoiSource = '';
-let poiRegionVersion = '';
 let poiRegions = [];
 let poiRegionsPromise = null;
-let activePoiRegionId = '';
+let activePoiRegionIds = [];
 const regionalPoiMemory = new Map();
 const regionalPoiLoads = new Map();
 let spreewaldPoiFeatures = [];
@@ -703,16 +698,61 @@ function pointInPoiRing(point, coordinates) {
   return inside;
 }
 
+function poiRegionContains(region, point) {
+  const latLng = L.latLng(point);
+  const [west, south, east, north] = region.bbox;
+  if (latLng.lng < west || latLng.lng > east || latLng.lat < south || latLng.lat > north) return false;
+  const inOuterRing = region.rings.some(ring => !ring.hole && pointInPoiRing(latLng, ring.coordinates));
+  const inHole = region.rings.some(ring => ring.hole && pointInPoiRing(latLng, ring.coordinates));
+  return inOuterRing && !inHole;
+}
+
+function poiRegionBoundaryDistanceSquared(region, point) {
+  const latLng = L.latLng(point);
+  const longitudeScale = Math.cos(latLng.lat * Math.PI / 180);
+  let minimum = Infinity;
+  region.rings.forEach(ring => {
+    const coordinates = ring.coordinates;
+    for (let index = 0, previous = coordinates.length - 1; index < coordinates.length;
+        previous = index++) {
+      const [startLng, startLat] = coordinates[previous];
+      const [endLng, endLat] = coordinates[index];
+      const vectorLng = (endLng - startLng) * longitudeScale;
+      const vectorLat = endLat - startLat;
+      const pointLng = (latLng.lng - startLng) * longitudeScale;
+      const pointLat = latLng.lat - startLat;
+      const lengthSquared = vectorLng * vectorLng + vectorLat * vectorLat;
+      const position = lengthSquared ? Math.max(0, Math.min(1,
+        (pointLng * vectorLng + pointLat * vectorLat) / lengthSquared)) : 0;
+      const deltaLng = pointLng - position * vectorLng;
+      const deltaLat = pointLat - position * vectorLat;
+      minimum = Math.min(minimum, deltaLng * deltaLng + deltaLat * deltaLat);
+    }
+  });
+  return minimum;
+}
+
 function poiRegionAt(point) {
   if (!point) return null;
-  const latLng = L.latLng(point);
-  return poiRegions.find(region => {
+  const candidates = poiRegions.filter(region => poiRegionContains(region, point));
+  if (candidates.length < 2) return candidates[0] || null;
+  return candidates.sort((left, right) =>
+    poiRegionBoundaryDistanceSquared(right, point) - poiRegionBoundaryDistanceSquared(left, point))[0];
+}
+
+function visiblePoiRegions() {
+  if (map.getZoom() < POI_MIN_ZOOM) return [];
+  const bounds = map.getBounds().pad(0.05);
+  const samples = [bounds.getNorthWest(), bounds.getNorthEast(), bounds.getSouthWest(),
+    bounds.getSouthEast(), bounds.getCenter()];
+  return poiRegions.filter(region => {
     const [west, south, east, north] = region.bbox;
-    if (latLng.lng < west || latLng.lng > east || latLng.lat < south || latLng.lat > north) return false;
-    const inOuterRing = region.rings.some(ring => !ring.hole && pointInPoiRing(latLng, ring.coordinates));
-    const inHole = region.rings.some(ring => ring.hole && pointInPoiRing(latLng, ring.coordinates));
-    return inOuterRing && !inHole;
-  }) || null;
+    if (east < bounds.getWest() || west > bounds.getEast() || north < bounds.getSouth() ||
+        south > bounds.getNorth()) return false;
+    if (samples.some(point => poiRegionContains(region, point))) return true;
+    return region.rings.some(ring => !ring.hole && ring.coordinates.some(([lng, lat]) =>
+      bounds.contains([lat, lng])));
+  });
 }
 
 function currentPoiRegion() {
@@ -728,8 +768,7 @@ async function loadPoiRegions() {
     const response = await fetch(POI_REGION_INDEX_URL, { cache: 'force-cache' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    poiRegionVersion = String(data.version || '');
-    poiRegions = (data.regions || []).filter(region => POI_REGION_DATA[region.id]);
+    poiRegions = (data.regions || []).filter(region => region.id && region.package && region.version);
     return true;
   } catch (error) {
     console.error('POI-Regionsgrenzen konnten nicht geladen werden:', error);
@@ -765,20 +804,20 @@ async function loadRegionalPoiFeatures(region) {
   const loading = (async () => {
     const key = `region:${region.id}`;
     const stored = await readStoredPoiRecord(key);
-    if (stored?.version === poiRegionVersion && Array.isArray(stored.pois)) {
+    if (stored?.version === region.version && Array.isArray(stored.pois)) {
       const features = storedPoiFeatures(stored.pois);
       regionalPoiMemory.set(region.id, features);
       return features;
     }
     if (!navigator.onLine) throw new Error(`${region.label}-POIs wurden noch nicht heruntergeladen`);
     setPoiMessage(`${region.label}-POIs werden einmalig geladen …`);
-    const response = await fetch(POI_REGION_DATA[region.id].url);
+    const response = await fetch(region.package);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const features = storedPoiFeatures(await parseRegionalPoiResponse(response));
     await storePoiRecord({
       id: key,
       regionId: region.id,
-      version: poiRegionVersion,
+      version: region.version,
       timestamp: Date.now(),
       pois: storedRegionalPois(features)
     });
@@ -793,33 +832,66 @@ async function loadRegionalPoiFeatures(region) {
   }
 }
 
+function setRegionalPoiLoadedMessage(primaryRegion, regionCount) {
+  const neighbors = regionCount - 1;
+  setPoiMessage(neighbors ? `${primaryRegion.label}-POIs und ${neighbors} Nachbarregion${neighbors > 1 ? 'en' : ''} lokal geladen.` :
+    `${primaryRegion.label}-POIs lokal geladen.`);
+}
+
 async function activateRegionalPois() {
   await poiRegionsPromise;
-  const region = currentPoiRegion();
-  activePoiRegionId = region?.id || '';
-  if (!region) return false;
+  const primaryRegion = currentPoiRegion();
+  if (!primaryRegion) {
+    activePoiRegionIds = [];
+    return false;
+  }
+  const regions = [primaryRegion, ...visiblePoiRegions()]
+    .filter((region, index, all) => all.findIndex(candidate => candidate.id === region.id) === index);
+  activePoiRegionIds = regions.map(region => region.id);
   if (!activePoiTypes().length) return true;
-  try {
-    const features = await loadRegionalPoiFeatures(region);
-    if (currentPoiRegion()?.id !== region.id) return true;
-    const source = `region:${region.id}`;
-    if (loadedPoiSource !== source) {
-      const [west, south, east, north] = region.bbox;
-      applyPoiDataset(features, [(south + north) / 2, (west + east) / 2], 0,
-        Date.now(), Object.keys(POI_TYPES), source);
-    } else {
-      updatePoiLayerContents();
-      updatePoiLayerVisibility();
-    }
-    setPoiMessage(`${region.label}-POIs lokal geladen.`);
-  } catch (error) {
-    if (region.id === 'brandenburg' && inSpreewaldPoiArea() && await activateSpreewaldPois()) {
+  const intendedSource = `regions:${regions.map(region => region.id).sort().join(',')}`;
+  if (loadedPoiSource === intendedSource && regions.every(region => regionalPoiMemory.has(region.id))) {
+    updatePoiLayerContents();
+    updatePoiLayerVisibility();
+    setRegionalPoiLoadedMessage(primaryRegion, regions.length);
+    return true;
+  }
+  const results = await Promise.allSettled(regions.map(region => loadRegionalPoiFeatures(region)));
+  if (currentPoiRegion()?.id !== primaryRegion.id) return true;
+  const primaryResult = results[0];
+  if (primaryResult.status === 'rejected') {
+    if (primaryRegion.id === 'brandenburg' && inSpreewaldPoiArea() && await activateSpreewaldPois()) {
       setPoiMessage('Spreewald-POIs als Fallback geladen.');
       return true;
     }
-    console.error(`${region.label}-POIs konnten nicht geladen werden:`, error);
-    setPoiMessage(`${region.label}-POIs sind offline noch nicht gespeichert.`, true);
+    console.error(`${primaryRegion.label}-POIs konnten nicht geladen werden:`, primaryResult.reason);
+    setPoiMessage(`${primaryRegion.label}-POIs sind offline noch nicht gespeichert.`, true);
+    return true;
   }
+  const loadedRegions = regions.filter((region, index) => results[index].status === 'fulfilled');
+  results.forEach((result, index) => {
+    if (result.status === 'rejected' && index > 0) {
+      console.warn(`${regions[index].label}-POIs der Nachbarregion konnten nicht geladen werden:`, result.reason);
+    }
+  });
+  const seen = new Set();
+  const features = results.flatMap(result => result.status === 'fulfilled' ? result.value : [])
+    .filter(feature => {
+      const key = `${feature.kind}:${feature.latLng.lat.toFixed(6)}:${feature.latLng.lng.toFixed(6)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  const source = `regions:${loadedRegions.map(region => region.id).sort().join(',')}`;
+  if (loadedPoiSource !== source) {
+    const [west, south, east, north] = primaryRegion.bbox;
+    applyPoiDataset(features, [(south + north) / 2, (west + east) / 2], 0,
+        Date.now(), Object.keys(POI_TYPES), source);
+  } else {
+    updatePoiLayerContents();
+    updatePoiLayerVisibility();
+  }
+  setRegionalPoiLoadedMessage(primaryRegion, loadedRegions.length);
   return true;
 }
 
@@ -1098,7 +1170,7 @@ async function loadPois(forceRefresh = false) {
   const cacheIsFresh = Date.now() - loadedPoiAt <= POI_CACHE_MAX_AGE_MS;
   const gpsMovedTooFar = Boolean(lastPosition && loadedPoiCenter &&
     loadedPoiCenter.distanceTo(L.latLng(lastPosition[0], lastPosition[1])) > POI_RELOAD_DISTANCE_METERS);
-  const fixedLocalSource = loadedPoiSource === 'spreewald' || loadedPoiSource.startsWith('region:');
+  const fixedLocalSource = loadedPoiSource === 'spreewald' || loadedPoiSource.startsWith('regions:');
   if (!forceRefresh && !fixedLocalSource && cacheIsFresh && loadedPoiCenter &&
       !gpsMovedTooFar && !missingTypes.length) {
     updatePoiLayerVisibility();
@@ -1498,12 +1570,12 @@ map.on('moveend zoomend', () => {
   updatePoiLayerContents();
   updatePoiLayerVisibility();
   if (!activePoiTypes().length) return;
-  const previousRegionId = activePoiRegionId;
+  const previousRegionIds = activePoiRegionIds;
   activateRegionalPois().then(handled => {
     if (handled) return;
     const insideSpreewald = inSpreewaldPoiArea();
     if (insideSpreewald) activateSpreewaldPois();
-    else if (previousRegionId || wasInSpreewaldPoiArea) schedulePoiLoad();
+    else if (previousRegionIds.length || wasInSpreewaldPoiArea) schedulePoiLoad();
     wasInSpreewaldPoiArea = insideSpreewald;
   });
 });

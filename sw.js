@@ -1,4 +1,4 @@
-const CACHE = 'kajaktracker-v21';
+const CACHE = 'kajaktracker-v22';
 
 const ASSETS = [
   './',
