@@ -140,6 +140,11 @@ const POI_DB_NAME = 'kajaktracker-pois';
 const POI_DB_VERSION = 1;
 const POI_STORE_NAME = 'areas';
 const POI_CURRENT_AREA_KEY = 'current';
+const SPREEWALD_POI_URL = 'offline-test/data/spreewald-pois.json';
+const SPREEWALD_POI_BOUNDS = L.latLngBounds(
+  [51.5655066, 13.7128759],
+  [52.1044933, 14.5851240]
+);
 const POI_TYPES = {
   lock: { label: 'Schleusen', icon: '🔒', layer: locksLayer, selectors: [['waterway', 'lock_gate'], ['waterway', 'lock'], ['lock', 'yes']] },
   weir: { label: 'Wehre', icon: '⚠️', layer: weirsLayer, selectors: [['waterway', 'weir']] },
@@ -158,6 +163,10 @@ let poiLoadTimer = null;
 let poiAbortController = null;
 let poiRestorePromise = null;
 let poiLoadInFlight = false;
+let loadedPoiSource = '';
+let spreewaldPoiFeatures = [];
+let spreewaldPoiPromise = null;
+let wasInSpreewaldPoiArea = false;
 
 const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
@@ -659,6 +668,42 @@ function storedPoiFeatures(pois) {
   });
 }
 
+function inSpreewaldPoiArea() {
+  const gpsInside = lastPosition && SPREEWALD_POI_BOUNDS.contains(L.latLng(lastPosition));
+  return Boolean(gpsInside || SPREEWALD_POI_BOUNDS.contains(map.getCenter()));
+}
+
+async function loadSpreewaldPois() {
+  try {
+    const response = await fetch(SPREEWALD_POI_URL, { cache: 'force-cache' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const pois = await response.json();
+    spreewaldPoiFeatures = storedPoiFeatures(pois);
+    return true;
+  } catch (error) {
+    console.error('Lokale Spreewald-POIs konnten nicht geladen werden:', error);
+    return false;
+  }
+}
+
+async function activateSpreewaldPois() {
+  await spreewaldPoiPromise;
+  if (!inSpreewaldPoiArea()) return false;
+  if (!spreewaldPoiFeatures.length) {
+    setPoiMessage('Lokale Spreewald-POIs sind nicht verfügbar.', true);
+    return true;
+  }
+  if (loadedPoiSource !== 'spreewald') {
+    applyPoiDataset(spreewaldPoiFeatures, SPREEWALD_POI_BOUNDS.getCenter(), POI_RADIUS_METERS,
+      Date.now(), Object.keys(POI_TYPES), 'spreewald');
+  } else {
+    updatePoiLayerContents();
+    updatePoiLayerVisibility();
+  }
+  setPoiMessage('Lokale Spreewald-POIs geladen.');
+  return true;
+}
+
 function poiLatLng(element) {
   const lat = Number(element.lat ?? element.center?.lat);
   const lon = Number(element.lon ?? element.center?.lon);
@@ -841,6 +886,7 @@ function applyPoiDataset(features, center, radius, timestamp, types, source = 'o
   loadedPoiRadius = radius;
   loadedPoiAt = timestamp;
   loadedPoiTypeKey = [...types].sort().join(',');
+  loadedPoiSource = source;
   rebuildPoiLayers(features);
   return source;
 }
@@ -882,6 +928,7 @@ function poiLoadCenter() {
 
 async function loadPois(forceRefresh = false) {
   await poiRestorePromise;
+  if (await activateSpreewaldPois()) return;
   if (poiLoadInFlight && !forceRefresh) return;
   const types = activePoiTypes();
   if (!types.length) {
@@ -895,7 +942,8 @@ async function loadPois(forceRefresh = false) {
   const cacheIsFresh = Date.now() - loadedPoiAt <= POI_CACHE_MAX_AGE_MS;
   const gpsMovedTooFar = Boolean(lastPosition && loadedPoiCenter &&
     loadedPoiCenter.distanceTo(L.latLng(lastPosition[0], lastPosition[1])) > POI_RELOAD_DISTANCE_METERS);
-  if (!forceRefresh && cacheIsFresh && loadedPoiCenter && !gpsMovedTooFar && !missingTypes.length) {
+  if (!forceRefresh && loadedPoiSource !== 'spreewald' && cacheIsFresh && loadedPoiCenter &&
+      !gpsMovedTooFar && !missingTypes.length) {
     updatePoiLayerVisibility();
     return;
   }
@@ -905,7 +953,8 @@ async function loadPois(forceRefresh = false) {
       'POIs benötigen für die erste Abfrage eine Internetverbindung.', !poiFeatures.length);
     return;
   }
-  const refreshArea = forceRefresh || !cacheIsFresh || !loadedPoiCenter || gpsMovedTooFar;
+  const refreshArea = forceRefresh || loadedPoiSource === 'spreewald' || !cacheIsFresh ||
+    !loadedPoiCenter || gpsMovedTooFar;
   const requestedTypes = refreshArea ? types : missingTypes;
   poiAbortController?.abort();
   poiAbortController = new AbortController();
@@ -1291,6 +1340,10 @@ map.on('click', closePoiPanel);
 map.on('moveend zoomend', () => {
   updatePoiLayerContents();
   updatePoiLayerVisibility();
+  const insideSpreewald = inSpreewaldPoiArea();
+  if (insideSpreewald) activateSpreewaldPois();
+  else if (wasInSpreewaldPoiArea && activePoiTypes().length) schedulePoiLoad();
+  wasInSpreewaldPoiArea = insideSpreewald;
 });
 const initialOverlays = savedMapOverlays();
 if (initialOverlays.seamark && navigator.onLine) seamark.addTo(map);
@@ -1299,7 +1352,9 @@ setToolButton('seamark', map.hasLayer(seamark));
 setToolButton('previousTracks', previousTracksVisible);
 locksVisible = poiEnabled.lock;
 weirsVisible = poiEnabled.weir;
+spreewaldPoiPromise = loadSpreewaldPois();
 poiRestorePromise = restorePoisFromIndexedDb();
+wasInSpreewaldPoiArea = inSpreewaldPoiArea();
 if (activePoiTypes().length) schedulePoiLoad();
 
 window.addEventListener('offline', () => {
@@ -1836,7 +1891,9 @@ function onPosition(pos) {
 
   lastPosition = c;
 
-  if (!poiLoadInFlight && activePoiTypes().length && loadedPoiCenter &&
+  if (inSpreewaldPoiArea()) {
+    activateSpreewaldPois();
+  } else if (!poiLoadInFlight && activePoiTypes().length && loadedPoiCenter &&
       loadedPoiCenter.distanceTo(L.latLng(c)) > POI_RELOAD_DISTANCE_METERS) {
     schedulePoiLoad();
   }
