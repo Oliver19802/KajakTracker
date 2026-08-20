@@ -1,0 +1,129 @@
+name: Build dynamic offline map
+
+on:
+  workflow_dispatch:
+    inputs:
+      latitude:
+        description: Latitude des Kartenmittelpunkts (-90 bis 90)
+        required: true
+        type: string
+      longitude:
+        description: Longitude des Kartenmittelpunkts (-180 bis 180)
+        required: true
+        type: string
+      map_name:
+        description: Name der Offlinekarte
+        required: false
+        default: offline-map
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-map-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Generate PMTiles and POIs
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ARTIFACT_NAME: kajaktracker-offline-map
+      GEOFABRIK_URL: https://download.geofabrik.de/europe/germany/brandenburg-latest.osm.pbf
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Osmium
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends osmium-tool
+
+      - name: Validate inputs and calculate bounds
+        id: area
+        env:
+          INPUT_LATITUDE: ${{ inputs.latitude }}
+          INPUT_LONGITUDE: ${{ inputs.longitude }}
+          INPUT_MAP_NAME: ${{ inputs.map_name }}
+        run: |
+          python3 tools/offline_map_generator.py prepare \
+            --latitude "$INPUT_LATITUDE" \
+            --longitude "$INPUT_LONGITUDE" \
+            --map-name "$INPUT_MAP_NAME" \
+            --output work/build-context.json \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Download current Brandenburg extract
+        run: |
+          curl --fail --location --retry 4 --retry-delay 10 \
+            --output work/brandenburg-latest.osm.pbf "$GEOFABRIK_URL"
+          test -s work/brandenburg-latest.osm.pbf
+
+      - name: Extract 30 km area
+        env:
+          BOUNDS: ${{ steps.area.outputs.bounds_csv }}
+        run: |
+          osmium extract \
+            --bbox "$BOUNDS" \
+            --strategy complete_ways \
+            --overwrite \
+            --output work/offline-area.osm.pbf \
+            work/brandenburg-latest.osm.pbf
+          osmium fileinfo --extended work/offline-area.osm.pbf
+          test -s work/offline-area.osm.pbf
+
+      - name: Extract compact POI source
+        run: |
+          osmium tags-filter work/offline-area.osm.pbf \
+            nwr/waterway=lock_gate nwr/waterway=lock nwr/lock=yes \
+            nwr/waterway=weir \
+            nwr/amenity=restaurant nwr/amenity=cafe nwr/amenity=pub \
+            nwr/amenity=biergarten nwr/amenity=fast_food nwr/amenity=toilets \
+            nwr/tourism=camp_site nwr/tourism=caravan_site \
+            nwr/leisure=slipway nwr/canoe=put_in nwr/canoe=launch \
+            nwr/waterway=access_point \
+            --overwrite --output work/offline-pois.osm.pbf
+          osmium export work/offline-pois.osm.pbf \
+            --overwrite --output work/offline-pois.geojson
+          python3 tools/offline_map_generator.py pois \
+            --context work/build-context.json \
+            --geojson work/offline-pois.geojson \
+            --output artifact/offline-pois.json
+
+      - name: Build OpenMapTiles PMTiles archive
+        run: |
+          mkdir -p work/planetiler
+          cp work/offline-area.osm.pbf work/planetiler/offline-area.osm.pbf
+          docker run --rm \
+            --volume "$PWD/work/planetiler:/data" \
+            openmaptiles/planetiler-openmaptiles:latest \
+            --osm-path=/data/offline-area.osm.pbf \
+            --output=/data/offline-map.pmtiles \
+            --minzoom=10 --maxzoom=15 \
+            --download --force --storage=mmap
+          mv work/planetiler/offline-map.pmtiles artifact/offline-map.pmtiles
+
+      - name: Validate archive and create metadata
+        run: |
+          python3 tools/offline_map_generator.py finalize \
+            --context work/build-context.json \
+            --pmtiles artifact/offline-map.pmtiles \
+            --pois artifact/offline-pois.json \
+            --metadata artifact/offline-map.json \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --artifact-name "$ARTIFACT_NAME"
+
+      - name: Upload offline map artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: |
+            artifact/offline-map.pmtiles
+            artifact/offline-pois.json
+            artifact/offline-map.json
+          if-no-files-found: error
+          retention-days: 14
+
