@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       latitude:
-        description: Latitude des Kartenmittelpunkts (-90 bis 90)
+        description: Latitude des Kartenmittelpunkts (-85 bis 85)
         required: true
         type: string
       longitude:
@@ -15,6 +15,11 @@ on:
         description: Name der Offlinekarte
         required: false
         default: offline-map
+        type: string
+      protomaps_url:
+        description: Optionale feste Protomaps-PMTiles-URL (leer = neuester Daily Build)
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -31,7 +36,7 @@ jobs:
     timeout-minutes: 90
     env:
       ARTIFACT_NAME: kajaktracker-offline-map
-      GEOFABRIK_URL: https://download.geofabrik.de/europe/germany/brandenburg-latest.osm.pbf
+      MAX_GEOFABRIK_BYTES: '2684354560'
 
     steps:
       - name: Checkout repository
@@ -56,22 +61,99 @@ jobs:
             --output work/build-context.json \
             --github-output "$GITHUB_OUTPUT"
 
-      - name: Download current Brandenburg extract
-        run: |
-          curl --fail --location --retry 4 --retry-delay 10 \
-            --output work/brandenburg-latest.osm.pbf "$GEOFABRIK_URL"
-          test -s work/brandenburg-latest.osm.pbf
-
-      - name: Extract 30 km area
+      - name: Resolve current basemap and Geofabrik regions
+        id: sources
         env:
-          BOUNDS: ${{ steps.area.outputs.bounds_csv }}
+          INPUT_PROTOMAPS_URL: ${{ inputs.protomaps_url }}
         run: |
-          osmium extract \
-            --bbox "$BOUNDS" \
-            --strategy complete_ways \
-            --overwrite \
-            --output work/offline-area.osm.pbf \
-            work/brandenburg-latest.osm.pbf
+          curl --fail --location --retry 4 --retry-delay 5 \
+            --output work/protomaps-builds.json \
+            https://build-metadata.protomaps.dev/builds.json
+          curl --fail --location --retry 4 --retry-delay 5 \
+            --output work/geofabrik-index.json \
+            https://download.geofabrik.de/index-v1.json
+          python3 tools/offline_map_generator.py sources \
+            --context work/build-context.json \
+            --protomaps-builds work/protomaps-builds.json \
+            --protomaps-url "$INPUT_PROTOMAPS_URL" \
+            --geofabrik-index work/geofabrik-index.json \
+            --regions-tsv work/geofabrik-regions.tsv \
+            --output work/source-context.json \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Extract Protomaps basemap ranges
+        env:
+          PROTOMAPS_URL: ${{ steps.sources.outputs.protomaps_url }}
+        run: |
+          mkdir -p artifact work/metrics
+          start_time=$(date +%s)
+          index=0
+          while read -r bounds; do
+            docker run --rm --volume "$PWD/artifact:/data" ghcr.io/protomaps/go-pmtiles:latest \
+              extract "$PROTOMAPS_URL" "/data/basemap-part-$index.pmtiles" \
+              --bbox="$bounds" --minzoom=10 --maxzoom=15 \
+              --download-threads=8 --overfetch=0.05 2>&1 | tee -a work/metrics/pmtiles-extract.log
+            index=$((index + 1))
+          done < <(jq -r '.bboxParts[] | join(",")' work/build-context.json)
+          if (( index == 1 )); then
+            mv artifact/basemap-part-0.pmtiles artifact/offline-map.pmtiles
+          else
+            docker run --rm --volume "$PWD/artifact:/data" ghcr.io/protomaps/go-pmtiles:latest \
+              merge /data/basemap-part-0.pmtiles /data/basemap-part-1.pmtiles /data/offline-map.pmtiles
+            rm artifact/basemap-part-*.pmtiles
+          fi
+          echo "$(( $(date +%s) - start_time ))" > work/metrics/pmtiles-seconds.txt
+          test -s artifact/offline-map.pmtiles
+
+      - name: Download selected Geofabrik extracts
+        run: |
+          mkdir -p work/geofabrik
+          total=0
+          index=0
+          while IFS=$'\t' read -r region url; do
+            target="work/geofabrik/$(printf '%02d' "$index").osm.pbf"
+            echo "Downloading Geofabrik region: $region"
+            remote_size=$(curl --fail --silent --show-error --location --head "$url" | \
+              awk 'tolower($1) == "content-length:" { gsub("\\r", "", $2); size=$2 } END { print size+0 }')
+            if (( remote_size == 0 )); then
+              echo "Die Größe des Geofabrik-Extrakts $region konnte nicht vorab bestimmt werden." >&2
+              echo "Der Download wird zum Schutz vor unpraktisch großen Dateien nicht gestartet." >&2
+              exit 1
+            fi
+            if (( total + remote_size > MAX_GEOFABRIK_BYTES )); then
+              echo "Geofabrik-Extrakte würden das Limit von $MAX_GEOFABRIK_BYTES Bytes überschreiten." >&2
+              echo "Für diese Position ist derzeit keine praktikable weltweite POI-Erzeugung möglich." >&2
+              exit 1
+            fi
+            curl --fail --location --retry 4 --retry-delay 10 --output "$target" "$url"
+            size=$(stat --format=%s "$target")
+            total=$((total + size))
+            if (( total > MAX_GEOFABRIK_BYTES )); then
+              echo "Geofabrik-Extrakte überschreiten das Limit von $MAX_GEOFABRIK_BYTES Bytes." >&2
+              echo "Für diese Position ist derzeit keine praktikable weltweite POI-Erzeugung möglich." >&2
+              exit 1
+            fi
+            index=$((index + 1))
+          done < work/geofabrik-regions.tsv
+          test "$index" -gt 0
+          echo "$total" > work/metrics/geofabrik-bytes.txt
+
+      - name: Extract and merge 30 km POI area
+        run: |
+          mkdir -p work/area-parts
+          index=0
+          for source in work/geofabrik/*.osm.pbf; do
+            while read -r bounds; do
+              osmium extract --bbox "$bounds" --strategy complete_ways --overwrite \
+                --output "work/area-parts/$(printf '%02d' "$index").osm.pbf" "$source"
+              index=$((index + 1))
+            done < <(jq -r '.bboxParts[] | join(",")' work/build-context.json)
+          done
+          if (( index == 1 )); then
+            cp work/area-parts/00.osm.pbf work/offline-area.osm.pbf
+          else
+            osmium merge --overwrite --output work/offline-area.osm.pbf work/area-parts/*.osm.pbf
+          fi
           osmium fileinfo --extended work/offline-area.osm.pbf
           test -s work/offline-area.osm.pbf
 
@@ -86,30 +168,18 @@ jobs:
             nwr/leisure=slipway nwr/canoe=put_in nwr/canoe=launch \
             nwr/waterway=access_point \
             --overwrite --output work/offline-pois.osm.pbf
-          osmium export work/offline-pois.osm.pbf \
-            --overwrite --output work/offline-pois.geojson
+          osmium export work/offline-pois.osm.pbf --overwrite --output work/offline-pois.geojson
           python3 tools/offline_map_generator.py pois \
             --context work/build-context.json \
             --geojson work/offline-pois.geojson \
             --output artifact/offline-pois.json
 
-      - name: Build OpenMapTiles PMTiles archive
-        run: |
-          mkdir -p work/planetiler
-          cp work/offline-area.osm.pbf work/planetiler/offline-area.osm.pbf
-          docker run --rm \
-            --volume "$PWD/work/planetiler:/data" \
-            openmaptiles/planetiler-openmaptiles:latest \
-            --osm-path=/data/offline-area.osm.pbf \
-            --output=/data/offline-map.pmtiles \
-            --minzoom=10 --maxzoom=15 \
-            --download --force --storage=mmap
-          mv work/planetiler/offline-map.pmtiles artifact/offline-map.pmtiles
-
       - name: Validate archive and create metadata
         run: |
           python3 tools/offline_map_generator.py finalize \
             --context work/build-context.json \
+            --sources work/source-context.json \
+            --metrics-dir work/metrics \
             --pmtiles artifact/offline-map.pmtiles \
             --pois artifact/offline-pois.json \
             --metadata artifact/offline-map.json \
@@ -126,4 +196,3 @@ jobs:
             artifact/offline-map.json
           if-no-files-found: error
           retention-days: 14
-
