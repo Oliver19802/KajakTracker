@@ -12,6 +12,7 @@
   const MAX_CHUNK_ATTEMPTS = 3;
   const STORAGE_RESERVE = 20 * 1024 * 1024;
   const MAP_URL = 'offline-test/data/spreewald-z10-15.pmtiles';
+  const MIN_ZOOM = 10;
   const CENTER = [14.149, 51.835];
   const BOUNDS = [[51.5655066, 13.7128759], [52.1044933, 14.5851240]];
 
@@ -199,9 +200,6 @@
   });
 
   function createLeafletMapLibreLayer(archive) {
-    const protocol = new pmtiles.Protocol();
-    protocol.add(archive);
-    maplibregl.addProtocol('pmtiles', protocol.tile);
     return L.Layer.extend({
       getAttribution() { return '© OpenStreetMap contributors · © OpenMapTiles'; },
       onAdd(leafletMap) {
@@ -230,7 +228,6 @@
         leafletMap.off('move zoom resize', this._sync);
         this._mapLibre?.remove();
         this._container?.remove();
-        maplibregl.removeProtocol('pmtiles');
       }
     });
   }
@@ -256,6 +253,9 @@
     let offlineLayer;
     let activeMode = 'online';
     let downloadRunning = false;
+    let offlineActivationPending = false;
+    const offlineProtocol = new pmtiles.Protocol();
+    let offlineProtocolRegistered = false;
     const elements = {};
     const originalMinZoom = map.getMinZoom();
     const originalMaxZoom = map.getMaxZoom();
@@ -306,38 +306,58 @@
 
     async function activateOffline(save = true) {
       if (!metadata?.complete) { setStatus('Offline-Karte ist noch nicht gespeichert.', true); return false; }
-      if (!insideBounds(map.getCenter())) {
-        if (save) {
-          map.setView([CENTER[1], CENTER[0]], MIN_ZOOM);
-        } else {
-        setStatus('Für diesen Bereich ist keine Offline-Karte gespeichert.', true);
-        showMapMessage('Für diesen Bereich ist keine Offline-Karte gespeichert.', true);
-        return false;
-        }
-      }
-      try {
-        if (map.hasLayer(onlineLayer)) map.removeLayer(onlineLayer);
-        if (offlineLayer && map.hasLayer(offlineLayer)) map.removeLayer(offlineLayer);
-        const source = new IndexedDbPmtilesSource(database, metadata);
-        const archive = new pmtiles.PMTiles(source);
-        const LayerClass = createLeafletMapLibreLayer(archive);
-        offlineLayer = new LayerClass();
-        offlineLayer.addTo(map);
-        map.setMinZoom(10); map.setMaxZoom(15); map.setMaxBounds(BOUNDS);
-        if (map.getZoom() < 10) map.setZoom(10);
-        if (map.getZoom() > 15) map.setZoom(15);
-        activeMode = 'offline';
+      if (activeMode === 'offline' && offlineLayer && map.hasLayer(offlineLayer)) {
         if (save) {
           localStorage.setItem('kajakBaseMap', 'offline');
           savePreferredMode('offline').catch(error => console.warn('Kartenmodus konnte nicht gespeichert werden:', error));
         }
-        setStatus('Offline-Karte wird aus dem Gerätespeicher verwendet.');
+        setStatus('Offline-Modus aktiv.');
         updatePanel();
         return true;
-      } catch (error) {
-        console.error('Offline-Karte konnte nicht aktiviert werden:', error);
-        setStatus('Offline-Karte konnte nicht geöffnet werden.', true);
-        return false;
+      }
+      if (offlineActivationPending) return true;
+      offlineActivationPending = true;
+      try {
+        if (!insideBounds(map.getCenter())) {
+          if (save) {
+            map.setView([CENTER[1], CENTER[0]], MIN_ZOOM);
+          } else {
+            setStatus('Für diesen Bereich ist keine Offline-Karte gespeichert.', true);
+            showMapMessage('Für diesen Bereich ist keine Offline-Karte gespeichert.', true);
+            return false;
+          }
+        }
+        try {
+          if (map.hasLayer(onlineLayer)) map.removeLayer(onlineLayer);
+          if (offlineLayer && map.hasLayer(offlineLayer)) map.removeLayer(offlineLayer);
+          const source = new IndexedDbPmtilesSource(database, metadata);
+          const archive = new pmtiles.PMTiles(source);
+          offlineProtocol.add(archive);
+          if (!offlineProtocolRegistered) {
+            maplibregl.addProtocol('pmtiles', offlineProtocol.tile);
+            offlineProtocolRegistered = true;
+          }
+          const LayerClass = createLeafletMapLibreLayer(archive);
+          offlineLayer = new LayerClass();
+          offlineLayer.addTo(map);
+          map.setMinZoom(10); map.setMaxZoom(15); map.setMaxBounds(BOUNDS);
+          if (map.getZoom() < 10) map.setZoom(10);
+          if (map.getZoom() > 15) map.setZoom(15);
+          activeMode = 'offline';
+          if (save) {
+            localStorage.setItem('kajakBaseMap', 'offline');
+            savePreferredMode('offline').catch(error => console.warn('Kartenmodus konnte nicht gespeichert werden:', error));
+          }
+          setStatus('Offline-Karte wird aus dem Gerätespeicher verwendet.');
+          updatePanel();
+          return true;
+        } catch (error) {
+          console.error('Offline-Karte konnte nicht aktiviert werden:', error);
+          setStatus('Offline-Karte konnte nicht geöffnet werden.', true);
+          return false;
+        }
+      } finally {
+        offlineActivationPending = false;
       }
     }
 
@@ -587,8 +607,14 @@
     }
 
     async function autoFallback() {
-      if (metadata?.complete && insideBounds(map.getCenter())) await activateOffline(false);
-      else {
+      if (activeMode === 'offline' && offlineLayer && map.hasLayer(offlineLayer)) {
+        setStatus('Offline-Modus aktiv.');
+        return;
+      }
+      if (offlineActivationPending) return;
+      if (metadata?.complete && insideBounds(map.getCenter())) {
+        await activateOffline(false);
+      } else {
         if (map.hasLayer(onlineLayer)) map.removeLayer(onlineLayer);
         setStatus('Für diesen Bereich ist keine Offline-Karte gespeichert.', true);
         showMapMessage('Für diesen Bereich ist keine Offline-Karte gespeichert.', true);
