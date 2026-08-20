@@ -132,8 +132,14 @@ let searchInFlight = false;
 const searchResultCache = new Map();
 const POI_STATE_KEY = 'kajakPoiVisibility';
 const POI_MIN_ZOOM = 13;
-const POI_REQUEST_TIMEOUT_MS = 12000;
-const POI_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
+const POI_REQUEST_TIMEOUT_MS = 45000;
+const POI_RADIUS_METERS = 30000;
+const POI_RELOAD_DISTANCE_METERS = 15000;
+const POI_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const POI_DB_NAME = 'kajaktracker-pois';
+const POI_DB_VERSION = 1;
+const POI_STORE_NAME = 'areas';
+const POI_CURRENT_AREA_KEY = 'current';
 const POI_TYPES = {
   lock: { label: 'Schleusen', icon: '🔒', layer: locksLayer, selectors: [['waterway', 'lock_gate'], ['waterway', 'lock'], ['lock', 'yes']] },
   weir: { label: 'Wehre', icon: '⚠️', layer: weirsLayer, selectors: [['waterway', 'weir']] },
@@ -144,11 +150,14 @@ const POI_TYPES = {
 };
 let poiEnabled = loadPoiState();
 let poiFeatures = [];
-let loadedPoiBounds = null;
+let loadedPoiCenter = null;
+let loadedPoiRadius = 0;
 let loadedPoiAt = 0;
 let loadedPoiTypeKey = '';
 let poiLoadTimer = null;
 let poiAbortController = null;
+let poiRestorePromise = null;
+let poiLoadInFlight = false;
 
 const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
@@ -576,6 +585,80 @@ function savePoiState() {
   localStorage.setItem(POI_STATE_KEY, JSON.stringify(poiEnabled));
 }
 
+function openPoiDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(POI_DB_NAME, POI_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(POI_STORE_NAME)) {
+        database.createObjectStore(POI_STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('POI-IndexedDB konnte nicht geöffnet werden'));
+  });
+}
+
+async function readStoredPoiArea() {
+  const database = await openPoiDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(POI_STORE_NAME, 'readonly');
+      const request = transaction.objectStore(POI_STORE_NAME).get(POI_CURRENT_AREA_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+async function storePoiArea() {
+  const database = await openPoiDatabase();
+  const record = {
+    id: POI_CURRENT_AREA_KEY,
+    center: { lat: loadedPoiCenter.lat, lng: loadedPoiCenter.lng },
+    radius: loadedPoiRadius,
+    timestamp: loadedPoiAt,
+    types: loadedPoiTypeKey ? loadedPoiTypeKey.split(',') : [],
+    pois: poiFeatures.map(feature => ({
+      kind: feature.kind,
+      lat: feature.latLng.lat,
+      lon: feature.latLng.lng,
+      tags: feature.tags
+    }))
+  };
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(POI_STORE_NAME, 'readwrite');
+      transaction.objectStore(POI_STORE_NAME).put(record);
+      transaction.oncomplete = resolve;
+      transaction.onabort = () => reject(transaction.error);
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function storedPoiFeatures(pois) {
+  const offlineTypeNames = {
+    locks: 'lock',
+    weirs: 'weir',
+    restaurants: 'restaurant',
+    toilets: 'toilets',
+    camping: 'camping',
+    slipways: 'slipway'
+  };
+  return (Array.isArray(pois) ? pois : []).flatMap(poi => {
+    const kind = poi.kind || offlineTypeNames[poi.type] || poi.type;
+    const lat = Number(poi.lat);
+    const lon = Number(poi.lon ?? poi.lng);
+    if (!POI_TYPES[kind] || !Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+    return [{ kind, latLng: L.latLng(lat, lon), tags: poi.tags || {} }];
+  });
+}
+
 function poiLatLng(element) {
   const lat = Number(element.lat ?? element.center?.lat);
   const lon = Number(element.lon ?? element.center?.lon);
@@ -660,29 +743,52 @@ function navigateToPoi(feature) {
   startWaterNavigation();
 }
 
-function renderPois(features = poiFeatures) {
+function createPoiMarker(feature) {
+  if (feature.marker) return feature.marker;
+  const config = POI_TYPES[feature.kind];
+  const icon = L.divIcon({
+    className: 'poiIconWrapper',
+    html: `<span class="poiIcon poiIcon-${feature.kind}" aria-hidden="true">${config.icon}</span>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
+  });
+  feature.marker = L.marker(feature.latLng, { icon, pane: 'hazardPane' }).bindPopup(poiPopup(feature));
+  if (config.navigable) feature.marker.on('popupopen', event => {
+    const button = event.popup.getElement()?.querySelector('.navigatePoiBtn');
+    if (button) button.onclick = () => navigateToPoi(feature);
+  });
+  return feature.marker;
+}
+
+function rebuildPoiLayers(features = poiFeatures) {
   Object.values(POI_TYPES).forEach(config => config.layer.clearLayers());
+  updatePoiLayerContents();
+  updatePoiLayerVisibility();
+}
+
+function updatePoiLayerContents() {
   if (map.getZoom() < POI_MIN_ZOOM) return;
   const visibleBounds = map.getBounds().pad(0.05);
-  const counts = {};
-  features.filter(feature => poiEnabled[feature.kind] && visibleBounds.contains(feature.latLng))
-    .sort((a, b) => a.latLng.distanceTo(map.getCenter()) - b.latLng.distanceTo(map.getCenter()))
-    .forEach(feature => {
-    counts[feature.kind] = (counts[feature.kind] || 0) + 1;
-    if (counts[feature.kind] > 100) return;
-    const config = POI_TYPES[feature.kind];
-    const icon = L.divIcon({
-      className: 'poiIconWrapper',
-      html: `<span class="poiIcon poiIcon-${feature.kind}" aria-hidden="true">${config.icon}</span>`,
-      iconSize: [32, 32],
-      iconAnchor: [16, 16]
+  Object.entries(POI_TYPES).forEach(([kind, config]) => {
+    const visibleFeatures = poiFeatures
+      .filter(feature => feature.kind === kind && visibleBounds.contains(feature.latLng))
+      .sort((a, b) => a.latLng.distanceTo(map.getCenter()) - b.latLng.distanceTo(map.getCenter()))
+      .slice(0, 100);
+    const visibleMarkers = new Set(visibleFeatures.map(createPoiMarker));
+    config.layer.eachLayer(marker => {
+      if (!visibleMarkers.has(marker)) config.layer.removeLayer(marker);
     });
-    const marker = L.marker(feature.latLng, { icon, pane: 'hazardPane' })
-      .bindPopup(poiPopup(feature)).addTo(config.layer);
-    if (config.navigable) marker.on('popupopen', event => {
-      const button = event.popup.getElement()?.querySelector('.navigatePoiBtn');
-      if (button) button.onclick = () => navigateToPoi(feature);
+    visibleMarkers.forEach(marker => {
+      if (!config.layer.hasLayer(marker)) config.layer.addLayer(marker);
     });
+  });
+}
+
+function updatePoiLayerVisibility() {
+  Object.entries(POI_TYPES).forEach(([kind, config]) => {
+    const shouldShow = poiEnabled[kind] && map.getZoom() >= POI_MIN_ZOOM;
+    if (shouldShow && !map.hasLayer(config.layer)) config.layer.addTo(map);
+    if (!shouldShow && map.hasLayer(config.layer)) map.removeLayer(config.layer);
   });
 }
 
@@ -694,25 +800,16 @@ function setPoiMessage(message, isError = false) {
   status.classList.toggle('isError', isError);
 }
 
-function paddedMapBounds() {
-  const bounds = map.getBounds();
-  const latPad = (bounds.getNorth() - bounds.getSouth()) * 0.3;
-  const lonPad = (bounds.getEast() - bounds.getWest()) * 0.3;
-  return L.latLngBounds(
-    [bounds.getSouth() - latPad, bounds.getWest() - lonPad],
-    [bounds.getNorth() + latPad, bounds.getEast() + lonPad]
-  );
-}
-
 function activePoiTypes() {
   return Object.keys(POI_TYPES).filter(type => poiEnabled[type]);
 }
 
-function poiOverpassQuery(types, bbox) {
+function poiOverpassQuery(types, center) {
+  const area = `around:${POI_RADIUS_METERS},${center.lat.toFixed(6)},${center.lng.toFixed(6)}`;
   const clauses = types.flatMap(type => POI_TYPES[type].selectors.map(([key, value, regex]) =>
-    `nwr["${key}"${regex ? '~' : '='}"${regex ? `^(${value})$` : value}"](${bbox});`
+    `nwr["${key}"${regex ? '~' : '='}"${regex ? `^(${value})$` : value}"](${area});`
   ));
-  return `[out:json][timeout:20][maxsize:12582912];(${clauses.join('')});out body geom center qt;`;
+  return `[out:json][timeout:45][maxsize:67108864];(${clauses.join('')});out body geom center qt;`;
 }
 
 async function fetchPoiOverpass(query) {
@@ -737,65 +834,108 @@ async function fetchPoiOverpass(query) {
   throw lastError || new Error('Keine Overpass-Instanz erreichbar');
 }
 
-function applyPoiDataset(features, bounds, types, source = 'overpass') {
+function applyPoiDataset(features, center, radius, timestamp, types, source = 'overpass') {
   poiFeatures = features;
   hazardFeatures = features.filter(feature => feature.kind === 'lock' || feature.kind === 'weir');
-  loadedPoiBounds = bounds;
-  loadedPoiAt = Date.now();
+  loadedPoiCenter = L.latLng(center);
+  loadedPoiRadius = radius;
+  loadedPoiAt = timestamp;
   loadedPoiTypeKey = [...types].sort().join(',');
-  renderPois(features);
+  rebuildPoiLayers(features);
   return source;
 }
 
+async function restorePoisFromIndexedDb() {
+  try {
+    const stored = await readStoredPoiArea();
+    if (!stored?.center || !stored?.timestamp) return false;
+    applyPoiDataset(storedPoiFeatures(stored.pois), stored.center,
+      Number(stored.radius) || POI_RADIUS_METERS, Number(stored.timestamp), stored.types || [], 'indexeddb');
+    if (activePoiTypes().length) setPoiMessage('Gespeicherte POIs geladen.');
+    return true;
+  } catch (error) {
+    console.warn('Gespeicherte POIs konnten nicht geladen werden:', error);
+    return false;
+  }
+}
+
+async function applyOfflinePois(pois, metadata = {}) {
+  const features = storedPoiFeatures(pois);
+  const types = [...new Set(features.map(feature => feature.kind))];
+  const center = metadata.center || poiLoadCenter();
+  const timestamp = Date.parse(metadata.generatedAt) || Date.now();
+  applyPoiDataset(features, center, Number(metadata.radiusKm) * 1000 || POI_RADIUS_METERS,
+    timestamp, types, 'offline-file');
+  await storePoiArea();
+  if (activePoiTypes().length) setPoiMessage('Offline-POIs geladen.');
+}
+
+window.loadKajakTrackerOfflinePois = applyOfflinePois;
+window.addEventListener('kajaktracker:offline-pois', event => {
+  applyOfflinePois(event.detail?.pois, event.detail?.metadata).catch(error =>
+    console.error('Offline-POIs konnten nicht übernommen werden:', error));
+});
+
+function poiLoadCenter() {
+  return lastPosition ? L.latLng(lastPosition[0], lastPosition[1]) : map.getCenter();
+}
+
 async function loadPois(forceRefresh = false) {
+  await poiRestorePromise;
+  if (poiLoadInFlight && !forceRefresh) return;
   const types = activePoiTypes();
   if (!types.length) {
     poiAbortController?.abort();
-    renderPois([]);
+    updatePoiLayerVisibility();
     return;
   }
-  if (map.getZoom() < POI_MIN_ZOOM) {
-    renderPois();
-    setPoiMessage('Bitte weiter in die Karte hineinzoomen.', true);
+  const center = poiLoadCenter();
+  const loadedTypes = new Set(loadedPoiTypeKey ? loadedPoiTypeKey.split(',') : []);
+  const missingTypes = types.filter(type => !loadedTypes.has(type));
+  const cacheIsFresh = Date.now() - loadedPoiAt <= POI_CACHE_MAX_AGE_MS;
+  const gpsMovedTooFar = Boolean(lastPosition && loadedPoiCenter &&
+    loadedPoiCenter.distanceTo(L.latLng(lastPosition[0], lastPosition[1])) > POI_RELOAD_DISTANCE_METERS);
+  if (!forceRefresh && cacheIsFresh && loadedPoiCenter && !gpsMovedTooFar && !missingTypes.length) {
+    updatePoiLayerVisibility();
     return;
   }
   if (!navigator.onLine) {
-    renderPois();
-    setPoiMessage('POIs benötigen derzeit eine Internetverbindung.', true);
+    updatePoiLayerVisibility();
+    setPoiMessage(poiFeatures.length ? 'Gespeicherte POIs werden offline verwendet.' :
+      'POIs benötigen für die erste Abfrage eine Internetverbindung.', !poiFeatures.length);
     return;
   }
-  const visibleBounds = map.getBounds();
-  const typeKey = [...types].sort().join(',');
-  const cacheIsFresh = Date.now() - loadedPoiAt <= POI_CACHE_MAX_AGE_MS;
-  if (!forceRefresh && cacheIsFresh && loadedPoiTypeKey === typeKey && loadedPoiBounds?.contains(visibleBounds)) {
-    renderPois();
-    return;
-  }
-  const requestBounds = paddedMapBounds();
-  const bbox = [requestBounds.getSouth(), requestBounds.getWest(),
-    requestBounds.getNorth(), requestBounds.getEast()]
-    .map(value => value.toFixed(6)).join(',');
+  const refreshArea = forceRefresh || !cacheIsFresh || !loadedPoiCenter || gpsMovedTooFar;
+  const requestedTypes = refreshArea ? types : missingTypes;
   poiAbortController?.abort();
   poiAbortController = new AbortController();
-  setPoiMessage('POIs werden geladen …');
+  poiLoadInFlight = true;
+  setPoiMessage('POIs werden für 30 km geladen …');
   try {
-    const data = await fetchPoiOverpass(poiOverpassQuery(types, bbox));
+    const requestCenter = refreshArea ? center : loadedPoiCenter;
+    const data = await fetchPoiOverpass(poiOverpassQuery(requestedTypes, requestCenter));
     const seen = new Set();
-    const features = (data.elements || []).flatMap(element => {
+    const downloadedFeatures = (data.elements || []).flatMap(element => {
       const kind = poiKind(element);
       const latLng = poiLatLng(element);
       const key = `${element.type}/${element.id}`;
-      if (!kind || !types.includes(kind) || !latLng || seen.has(key)) return [];
+      if (!kind || !requestedTypes.includes(kind) || !latLng || seen.has(key)) return [];
       seen.add(key);
       return [{ kind, latLng, tags: element.tags || {} }];
     });
-    applyPoiDataset(features.filter((feature, index, all) => !all.slice(0, index)
-      .some(other => other.kind === feature.kind && other.latLng.distanceTo(feature.latLng) < 20)), requestBounds, types);
-    setPoiMessage(types.map(type => `${features.filter(feature => feature.kind === type).length} ${POI_TYPES[type].label}`).join(' · '));
+    const combined = refreshArea ? downloadedFeatures : poiFeatures.concat(downloadedFeatures);
+    const features = combined.filter((feature, index, all) => !all.slice(0, index)
+      .some(other => other.kind === feature.kind && other.latLng.distanceTo(feature.latLng) < 20));
+    const storedTypes = refreshArea ? requestedTypes : [...new Set([...loadedTypes, ...requestedTypes])];
+    applyPoiDataset(features, requestCenter, POI_RADIUS_METERS, Date.now(), storedTypes);
+    await storePoiArea();
+    setPoiMessage('POIs offline zwischengespeichert.');
   } catch (error) {
     if (error.name === 'AbortError') return;
     console.error('POIs konnten nicht geladen werden:', error);
     setPoiMessage('POIs sind derzeit nicht verfügbar.', true);
+  } finally {
+    poiLoadInFlight = false;
   }
 }
 
@@ -812,13 +952,12 @@ function togglePoi(kind) {
   const button = poiControlElements.buttons?.[kind];
   button?.classList.toggle('isActive', poiEnabled[kind]);
   button?.setAttribute('aria-pressed', String(poiEnabled[kind]));
-  renderPois();
+  updatePoiLayerContents();
+  updatePoiLayerVisibility();
   if (poiEnabled[kind]) {
     schedulePoiLoad();
   } else {
-    poiAbortController?.abort();
-    if (activePoiTypes().length) schedulePoiLoad();
-    else setPoiMessage('');
+    if (!activePoiTypes().length) setPoiMessage('');
   }
 }
 
@@ -1149,7 +1288,10 @@ map.on('click', chooseNavigationTarget);
 map.on('click', closeMapMenu);
 map.on('click', closeSearchPanel);
 map.on('click', closePoiPanel);
-map.on('moveend zoomend', schedulePoiLoad);
+map.on('moveend zoomend', () => {
+  updatePoiLayerContents();
+  updatePoiLayerVisibility();
+});
 const initialOverlays = savedMapOverlays();
 if (initialOverlays.seamark && navigator.onLine) seamark.addTo(map);
 previousTracksVisible = Boolean(initialOverlays.previousTracks);
@@ -1157,6 +1299,7 @@ setToolButton('seamark', map.hasLayer(seamark));
 setToolButton('previousTracks', previousTracksVisible);
 locksVisible = poiEnabled.lock;
 weirsVisible = poiEnabled.weir;
+poiRestorePromise = restorePoisFromIndexedDb();
 if (activePoiTypes().length) schedulePoiLoad();
 
 window.addEventListener('offline', () => {
@@ -1692,6 +1835,11 @@ function onPosition(pos) {
 
 
   lastPosition = c;
+
+  if (!poiLoadInFlight && activePoiTypes().length && loadedPoiCenter &&
+      loadedPoiCenter.distanceTo(L.latLng(c)) > POI_RELOAD_DISTANCE_METERS) {
+    schedulePoiLoad();
+  }
 
 
   /*
