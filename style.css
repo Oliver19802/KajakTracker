@@ -566,6 +566,89 @@ button.danger {
   color: #fff;
 }
 
+.poiControl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+
+.poiMenuButton {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  min-height: 46px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--dark);
+  box-shadow: 0 2px 9px rgba(0, 0, 0, .2);
+  font-size: 20px;
+}
+
+.poiMenuButton.isActive {
+  background: var(--teal);
+  color: #fff;
+}
+
+.poiPanel {
+  display: grid;
+  width: min(270px, 70vw);
+  max-height: min(430px, 58dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .2);
+}
+
+.poiPanel[hidden] {
+  display: none;
+}
+
+.poiPanel > button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 0;
+  background: #fff;
+  color: var(--dark);
+  font-size: 13px;
+  text-align: left;
+  white-space: normal;
+}
+
+.poiPanel > button + button {
+  border-top: 1px solid var(--border);
+}
+
+.poiPanel > button.isActive {
+  background: var(--teal);
+  color: #fff;
+}
+
+.poiPanel > button.isActive::after {
+  content: " ✓";
+  float: right;
+}
+
+.poiStatus {
+  padding: 7px 9px;
+  border-top: 1px solid var(--border);
+  color: #52747c;
+  font-size: 10px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.poiStatus.isError {
+  color: #b52c27;
+}
+
 .restaurantActions {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -639,6 +722,29 @@ button.danger {
   border: 0;
 }
 
+.poiIconWrapper {
+  border: 0;
+  background: transparent;
+}
+
+.poiIcon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .35);
+  font-size: 17px;
+}
+
+.poiIcon-lock { background: #246b9b; }
+.poiIcon-weir { background: #f5a623; }
+.poiIcon-restaurant { background: #8a5a2b; }
+.poiIcon-toilets { background: #547bbd; }
+.poiIcon-camping { background: #4d8b4a; }
+.poiIcon-slipway { background: #147aa1; }
+
 .hazardIcon {
   display: grid;
   width: 32px;
@@ -675,7 +781,8 @@ button.danger {
   font-size: 18px;
 }
 
-.navigateRestaurantBtn {
+.navigateRestaurantBtn,
+.navigatePoiBtn {
   margin-top: 7px;
   padding: 7px 9px;
   border-radius: 8px;

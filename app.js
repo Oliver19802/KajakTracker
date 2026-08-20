@@ -112,6 +112,9 @@ const locksLayer = L.layerGroup().addTo(map);
 const weirsLayer = L.layerGroup().addTo(map);
 const searchLayer = L.layerGroup().addTo(map);
 const restaurantsLayer = L.layerGroup().addTo(map);
+const toiletsLayer = L.layerGroup().addTo(map);
+const campingLayer = L.layerGroup().addTo(map);
+const slipwaysLayer = L.layerGroup().addTo(map);
 
 let previousTracksVisible = false;
 let navigationEnabled = false;
@@ -120,36 +123,41 @@ let navigationRoute = null;
 let navigationControlElements = {};
 let locksVisible = false;
 let weirsVisible = false;
-let hazardLoadTimer = null;
-let hazardAbortController = null;
-let loadedHazardBounds = null;
 let hazardFeatures = [];
 let searchControlElements = {};
 let mapMenuElements = {};
+let poiControlElements = {};
 let lastSearchAt = 0;
 let searchInFlight = false;
 const searchResultCache = new Map();
-let restaurantsVisible = false;
-let restaurantFeatures = [];
-let loadedRestaurantBounds = null;
-let loadedRestaurantAt = 0;
-let restaurantAbortController = null;
+const POI_STATE_KEY = 'kajakPoiVisibility';
+const POI_MIN_ZOOM = 13;
+const POI_REQUEST_TIMEOUT_MS = 12000;
+const POI_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
+const POI_TYPES = {
+  lock: { label: 'Schleusen', icon: '🔒', layer: locksLayer, selectors: [['waterway', 'lock_gate'], ['waterway', 'lock'], ['lock', 'yes']] },
+  weir: { label: 'Wehre', icon: '⚠️', layer: weirsLayer, selectors: [['waterway', 'weir']] },
+  restaurant: { label: 'Gaststätten', icon: '🍽', layer: restaurantsLayer, selectors: [['amenity', 'restaurant|cafe|pub|biergarten|fast_food', true]], navigable: true },
+  toilets: { label: 'Toiletten', icon: '🚻', layer: toiletsLayer, selectors: [['amenity', 'toilets']], navigable: true },
+  camping: { label: 'Campingplätze', icon: '🏕', layer: campingLayer, selectors: [['tourism', 'camp_site|caravan_site', true]], navigable: true },
+  slipway: { label: 'Slipways / Anlegestellen', icon: '🛶', layer: slipwaysLayer, selectors: [['leisure', 'slipway'], ['canoe', 'put_in|launch', true], ['waterway', 'access_point']], navigable: true }
+};
+let poiEnabled = loadPoiState();
+let poiFeatures = [];
+let loadedPoiBounds = null;
+let loadedPoiAt = 0;
+let loadedPoiTypeKey = '';
+let poiLoadTimer = null;
+let poiAbortController = null;
 
-const HAZARD_MIN_ZOOM = 12;
 const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter'
-];
-const RESTAURANT_OVERPASS_URLS = [
-  ...OVERPASS_URLS,
+  'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter'
 ];
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const NOMINATIM_MIN_INTERVAL_MS = 1000;
 const NOMINATIM_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
-const RESTAURANT_MIN_ZOOM = 14;
-const RESTAURANT_REQUEST_TIMEOUT_MS = 12000;
-const RESTAURANT_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
 
 
 /* =========================================================
@@ -555,71 +563,133 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
-function hazardLatLng(element) {
-  const lat = Number(element.lat ?? element.center?.lat);
-  const lon = Number(element.lon ?? element.center?.lon);
-  return Number.isFinite(lat) && Number.isFinite(lon) ? L.latLng(lat, lon) : null;
+function loadPoiState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(POI_STATE_KEY) || '{}');
+    return Object.fromEntries(Object.keys(POI_TYPES).map(type => [type, saved[type] === true]));
+  } catch (error) {
+    return Object.fromEntries(Object.keys(POI_TYPES).map(type => [type, false]));
+  }
 }
 
-function hazardKind(element) {
+function savePoiState() {
+  localStorage.setItem(POI_STATE_KEY, JSON.stringify(poiEnabled));
+}
+
+function poiLatLng(element) {
+  const lat = Number(element.lat ?? element.center?.lat);
+  const lon = Number(element.lon ?? element.center?.lon);
+  if (Number.isFinite(lat) && Number.isFinite(lon)) return L.latLng(lat, lon);
+  const coordinates = elementGeometries(element).flat();
+  if (!coordinates.length) return null;
+  const latitudes = coordinates.map(coordinate => Number(coordinate.lat)).filter(Number.isFinite);
+  const longitudes = coordinates.map(coordinate => Number(coordinate.lon)).filter(Number.isFinite);
+  if (!latitudes.length || !longitudes.length) return null;
+  return L.latLng(
+    (Math.min(...latitudes) + Math.max(...latitudes)) / 2,
+    (Math.min(...longitudes) + Math.max(...longitudes)) / 2
+  );
+}
+
+function poiKind(element) {
   const tags = element.tags || {};
   if (tags.waterway === 'weir') return 'weir';
   if (tags.waterway === 'lock_gate' || tags.waterway === 'lock' || tags.lock === 'yes') {
     return 'lock';
   }
+  if (/^(restaurant|cafe|pub|biergarten|fast_food)$/.test(tags.amenity || '')) return 'restaurant';
+  if (tags.amenity === 'toilets') return 'toilets';
+  if (/^(camp_site|caravan_site)$/.test(tags.tourism || '')) return 'camping';
+  if (tags.leisure === 'slipway' || /^(put_in|launch)$/.test(tags.canoe || '') ||
+      tags.waterway === 'access_point') return 'slipway';
   return null;
 }
 
-function hazardPopup(feature) {
+function poiTypeName(feature) {
   const tags = feature.tags;
-  const title = tags.name || (feature.kind === 'weir' ? 'Wehr' : 'Schleuse');
-  const details = [
-    tags.waterway && `Wasserweg-Typ: ${tags.waterway}`,
-    tags.lock_name && `Schleuse: ${tags.lock_name}`,
-    tags.operator && `Betreiber: ${tags.operator}`,
-    tags.opening_hours && `Öffnungszeiten: ${tags.opening_hours}`,
-    tags.description && `Hinweis: ${tags.description}`
-  ].filter(Boolean);
-  return `<strong>${escapeHtml(title)}</strong>${details.length
-    ? `<br>${details.map(escapeHtml).join('<br>')}`
-    : ''}<br><small>Daten: OpenStreetMap-Mitwirkende</small>`;
+  if (feature.kind === 'restaurant') return restaurantType(tags);
+  if (feature.kind === 'camping') return tags.tourism === 'caravan_site' ? 'Wohnmobilstellplatz' : 'Campingplatz';
+  if (feature.kind === 'slipway') return tags.leisure === 'slipway' ? 'Slipway' : 'Einsetz-/Anlegestelle';
+  return { lock: 'Schleuse', weir: 'Wehr', toilets: 'Toilette' }[feature.kind] || POI_TYPES[feature.kind].label;
 }
 
-function renderHazards() {
-  locksLayer.clearLayers();
-  weirsLayer.clearLayers();
-  if (map.getZoom() < HAZARD_MIN_ZOOM) return;
+function safeWebsite(value) {
+  try {
+    const url = new URL(value || '');
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+  } catch (error) {
+    return '';
+  }
+}
 
+function poiPopup(feature) {
+  const tags = feature.tags;
+  const type = poiTypeName(feature);
+  const title = tags.name || tags.lock_name || type;
+  const address = [tags['addr:street'], tags['addr:housenumber'], tags['addr:postcode'],
+    tags['addr:city']].filter(Boolean).join(' ');
+  const details = [
+    `Typ: ${type}`,
+    address && `Adresse: ${address}`,
+    tags.operator && `Betreiber: ${tags.operator}`,
+    tags.opening_hours && `Öffnungszeiten: ${tags.opening_hours}`,
+    (tags.phone || tags['contact:phone']) && `Telefon: ${tags.phone || tags['contact:phone']}`,
+    tags.description && `Beschreibung: ${tags.description}`,
+    tags.fee && `Gebühr: ${tags.fee}`,
+    tags.access && `Zugang: ${tags.access}`,
+    tags.canoe && `Kanu-Zugang: ${tags.canoe}`
+  ].filter(Boolean);
+  const website = safeWebsite(tags.website || tags['contact:website']);
+  const navigation = POI_TYPES[feature.kind].navigable
+    ? '<br><button type="button" class="navigatePoiBtn">🧭 Dorthin navigieren</button>'
+    : '';
+  return `<strong>${escapeHtml(title)}</strong>${details.length
+    ? `<br>${details.map(escapeHtml).join('<br>')}`
+    : ''}${website ? `<br><a href="${escapeHtml(website)}" target="_blank" rel="noopener noreferrer">Website</a>` : ''}` +
+    `${navigation}<br><small>Daten: OpenStreetMap-Mitwirkende</small>`;
+}
+
+function navigateToPoi(feature) {
+  setNavigationEnabled(true);
+  navigationLayer.clearLayers();
+  navigationTarget = feature.latLng;
+  L.marker(navigationTarget).addTo(navigationLayer).bindPopup('Navigationsziel');
+  navigationControlElements.start.disabled = false;
+  navigationControlElements.stop.hidden = true;
+  setNavigationMessage(`${poiTypeName(feature)} als Ziel gewählt`);
+  startWaterNavigation();
+}
+
+function renderPois(features = poiFeatures) {
+  Object.values(POI_TYPES).forEach(config => config.layer.clearLayers());
+  if (map.getZoom() < POI_MIN_ZOOM) return;
   const visibleBounds = map.getBounds().pad(0.05);
-  const candidates = hazardFeatures
-    .filter(feature => visibleBounds.contains(feature.latLng))
-    .sort((a, b) => a.latLng.distanceTo(map.getCenter()) -
-      b.latLng.distanceTo(map.getCenter()));
-  const visibleFeatures = [
-    ...candidates.filter(feature => feature.kind === 'lock').slice(0, 100),
-    ...candidates.filter(feature => feature.kind === 'weir').slice(0, 100)
-  ];
-
-  visibleFeatures.forEach(feature => {
-    if ((feature.kind === 'lock' && !locksVisible) ||
-        (feature.kind === 'weir' && !weirsVisible)) return;
-    const isWeir = feature.kind === 'weir';
+  const counts = {};
+  features.filter(feature => poiEnabled[feature.kind] && visibleBounds.contains(feature.latLng))
+    .sort((a, b) => a.latLng.distanceTo(map.getCenter()) - b.latLng.distanceTo(map.getCenter()))
+    .forEach(feature => {
+    counts[feature.kind] = (counts[feature.kind] || 0) + 1;
+    if (counts[feature.kind] > 100) return;
+    const config = POI_TYPES[feature.kind];
     const icon = L.divIcon({
-      className: 'hazardIconWrapper',
-      html: `<span class="hazardIcon ${isWeir ? 'weirIcon' : 'lockIcon'}" aria-hidden="true">${isWeir ? '⚠️' : '🔒'}</span>`,
+      className: 'poiIconWrapper',
+      html: `<span class="poiIcon poiIcon-${feature.kind}" aria-hidden="true">${config.icon}</span>`,
       iconSize: [32, 32],
       iconAnchor: [16, 16]
     });
-    L.marker(feature.latLng, { icon, pane: 'hazardPane' })
-      .bindPopup(hazardPopup(feature))
-      .addTo(isWeir ? weirsLayer : locksLayer);
+    const marker = L.marker(feature.latLng, { icon, pane: 'hazardPane' })
+      .bindPopup(poiPopup(feature)).addTo(config.layer);
+    if (config.navigable) marker.on('popupopen', event => {
+      const button = event.popup.getElement()?.querySelector('.navigatePoiBtn');
+      if (button) button.onclick = () => navigateToPoi(feature);
+    });
   });
 }
 
-function setHazardMessage(message, isError = false) {
-  const status = searchControlElements.hazardStatus;
+function setPoiMessage(message, isError = false) {
+  const status = poiControlElements.status;
   if (!status) return;
-  status.hidden = !locksVisible && !weirsVisible;
+  status.hidden = !Object.values(poiEnabled).some(Boolean);
   status.textContent = message;
   status.classList.toggle('isError', isError);
 }
@@ -634,100 +704,122 @@ function paddedMapBounds() {
   );
 }
 
-async function loadHazards() {
-  if ((!locksVisible && !weirsVisible) || map.getZoom() < HAZARD_MIN_ZOOM) {
-    renderHazards();
-    if (locksVisible || weirsVisible) {
-      setHazardMessage(`Schleusen/Wehre ab Zoom ${HAZARD_MIN_ZOOM}`);
+function activePoiTypes() {
+  return Object.keys(POI_TYPES).filter(type => poiEnabled[type]);
+}
+
+function poiOverpassQuery(types, bbox) {
+  const clauses = types.flatMap(type => POI_TYPES[type].selectors.map(([key, value, regex]) =>
+    `nwr["${key}"${regex ? '~' : '='}"${regex ? `^(${value})$` : value}"](${bbox});`
+  ));
+  return `[out:json][timeout:20][maxsize:12582912];(${clauses.join('')});out body geom center qt;`;
+}
+
+async function fetchPoiOverpass(query) {
+  let lastError;
+  for (const url of OVERPASS_URLS) {
+    const attemptController = new AbortController();
+    const abortAttempt = () => attemptController.abort();
+    poiAbortController.signal.addEventListener('abort', abortAttempt, { once: true });
+    const timeoutId = setTimeout(abortAttempt, POI_REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: query }), signal: attemptController.signal });
+      if (response.ok) return response.json();
+      lastError = new Error(`Overpass-HTTP ${response.status}`);
+    } catch (error) {
+      if (poiAbortController.signal.aborted) throw error;
+      lastError = error;
+    } finally {
+      clearTimeout(timeoutId);
+      poiAbortController.signal.removeEventListener('abort', abortAttempt);
     }
+  }
+  throw lastError || new Error('Keine Overpass-Instanz erreichbar');
+}
+
+function applyPoiDataset(features, bounds, types, source = 'overpass') {
+  poiFeatures = features;
+  hazardFeatures = features.filter(feature => feature.kind === 'lock' || feature.kind === 'weir');
+  loadedPoiBounds = bounds;
+  loadedPoiAt = Date.now();
+  loadedPoiTypeKey = [...types].sort().join(',');
+  renderPois(features);
+  return source;
+}
+
+async function loadPois(forceRefresh = false) {
+  const types = activePoiTypes();
+  if (!types.length) {
+    poiAbortController?.abort();
+    renderPois([]);
+    return;
+  }
+  if (map.getZoom() < POI_MIN_ZOOM) {
+    renderPois();
+    setPoiMessage('Bitte weiter in die Karte hineinzoomen.', true);
     return;
   }
   if (!navigator.onLine) {
-    setHazardMessage('Schleusen/Wehre benötigen eine Internetverbindung.', true);
+    renderPois();
+    setPoiMessage('POIs benötigen derzeit eine Internetverbindung.', true);
     return;
   }
-
   const visibleBounds = map.getBounds();
-  if (loadedHazardBounds?.contains(visibleBounds)) {
-    renderHazards();
+  const typeKey = [...types].sort().join(',');
+  const cacheIsFresh = Date.now() - loadedPoiAt <= POI_CACHE_MAX_AGE_MS;
+  if (!forceRefresh && cacheIsFresh && loadedPoiTypeKey === typeKey && loadedPoiBounds?.contains(visibleBounds)) {
+    renderPois();
     return;
   }
-
   const requestBounds = paddedMapBounds();
   const bbox = [requestBounds.getSouth(), requestBounds.getWest(),
     requestBounds.getNorth(), requestBounds.getEast()]
     .map(value => value.toFixed(6)).join(',');
-  const query = `[out:json][timeout:20];(
-    node["waterway"="lock_gate"](${bbox});
-    way["waterway"="lock_gate"](${bbox});
-    node["waterway"="lock"](${bbox});
-    way["waterway"="lock"](${bbox});
-    node["lock"="yes"](${bbox});
-    way["lock"="yes"](${bbox});
-    node["waterway"="weir"](${bbox});
-    way["waterway"="weir"](${bbox});
-  );out center tags;`;
-
-  hazardAbortController?.abort();
-  hazardAbortController = new AbortController();
-  setHazardMessage('Schleusen und Wehre werden geladen …');
-
+  poiAbortController?.abort();
+  poiAbortController = new AbortController();
+  setPoiMessage('POIs werden geladen …');
   try {
-    let response;
-    for (const url of OVERPASS_URLS) {
-      response = await fetch(url, {
-        method: 'POST',
-        body: new URLSearchParams({ data: query }),
-        signal: hazardAbortController.signal
-      });
-      if (response.ok) break;
-    }
-    if (!response?.ok) throw new Error(`Overpass-HTTP ${response?.status || 0}`);
-    const data = await response.json();
+    const data = await fetchPoiOverpass(poiOverpassQuery(types, bbox));
     const seen = new Set();
-    const rawFeatures = (data.elements || []).flatMap(element => {
-      const kind = hazardKind(element);
-      const latLng = hazardLatLng(element);
+    const features = (data.elements || []).flatMap(element => {
+      const kind = poiKind(element);
+      const latLng = poiLatLng(element);
       const key = `${element.type}/${element.id}`;
-      if (!kind || !latLng || seen.has(key)) return [];
+      if (!kind || !types.includes(kind) || !latLng || seen.has(key)) return [];
       seen.add(key);
       return [{ kind, latLng, tags: element.tags || {} }];
     });
-    rawFeatures.sort((a, b) => Number(Boolean(b.tags.name || b.tags.lock_name)) -
-      Number(Boolean(a.tags.name || a.tags.lock_name)));
-    hazardFeatures = rawFeatures.filter((feature, index, features) =>
-      !features.slice(0, index).some(other =>
-        other.kind === feature.kind && other.latLng.distanceTo(feature.latLng) < 20
-      )
-    );
-    loadedHazardBounds = requestBounds;
-    renderHazards();
-    setHazardMessage(
-      `${hazardFeatures.filter(f => f.kind === 'lock').length} Schleusen, ` +
-      `${hazardFeatures.filter(f => f.kind === 'weir').length} Wehre`
-    );
+    applyPoiDataset(features.filter((feature, index, all) => !all.slice(0, index)
+      .some(other => other.kind === feature.kind && other.latLng.distanceTo(feature.latLng) < 20)), requestBounds, types);
+    setPoiMessage(types.map(type => `${features.filter(feature => feature.kind === type).length} ${POI_TYPES[type].label}`).join(' · '));
   } catch (error) {
     if (error.name === 'AbortError') return;
-    console.error('OSM-Hindernisse konnten nicht geladen werden:', error);
-    setHazardMessage('Schleusen/Wehre derzeit nicht verfügbar', true);
+    console.error('POIs konnten nicht geladen werden:', error);
+    setPoiMessage('POIs sind derzeit nicht verfügbar.', true);
   }
 }
 
-function scheduleHazardLoad() {
-  clearTimeout(hazardLoadTimer);
-  hazardLoadTimer = setTimeout(loadHazards, 700);
+function schedulePoiLoad() {
+  clearTimeout(poiLoadTimer);
+  poiLoadTimer = setTimeout(loadPois, 700);
 }
 
-function toggleHazard(kind) {
-  if (kind === 'lock') locksVisible = !locksVisible;
-  else weirsVisible = !weirsVisible;
-  setToolButton('locks', locksVisible);
-  setToolButton('weirs', weirsVisible);
-  if (searchControlElements.hazardStatus) {
-    searchControlElements.hazardStatus.hidden = !locksVisible && !weirsVisible;
+function togglePoi(kind) {
+  poiEnabled[kind] = !poiEnabled[kind];
+  locksVisible = poiEnabled.lock;
+  weirsVisible = poiEnabled.weir;
+  savePoiState();
+  const button = poiControlElements.buttons?.[kind];
+  button?.classList.toggle('isActive', poiEnabled[kind]);
+  button?.setAttribute('aria-pressed', String(poiEnabled[kind]));
+  renderPois();
+  if (poiEnabled[kind]) {
+    schedulePoiLoad();
+  } else {
+    poiAbortController?.abort();
+    if (activePoiTypes().length) schedulePoiLoad();
+    else setPoiMessage('');
   }
-  renderHazards();
-  scheduleHazardLoad();
 }
 
 function warnAboutRouteWeirs(latLngs) {
@@ -756,6 +848,13 @@ function closeSearchPanel() {
   searchControlElements.panel.hidden = true;
   searchControlElements.button.classList.remove('isActive');
   searchControlElements.button.setAttribute('aria-expanded', 'false');
+}
+
+function closePoiPanel() {
+  if (!poiControlElements.panel) return;
+  poiControlElements.panel.hidden = true;
+  poiControlElements.button.classList.remove('isActive');
+  poiControlElements.button.setAttribute('aria-expanded', 'false');
 }
 
 function renderSearchResults(results) {
@@ -852,75 +951,6 @@ function restaurantType(tags) {
   }[tags.amenity] || 'Gastronomie';
 }
 
-function restaurantPopup(feature) {
-  const tags = feature.tags;
-  const address = [tags['addr:street'], tags['addr:housenumber'],
-    tags['addr:postcode'], tags['addr:city']].filter(Boolean).join(' ');
-  const details = [
-    `Art: ${restaurantType(tags)}`,
-    address && `Adresse: ${address}`,
-    tags.opening_hours && `Öffnungszeiten: ${tags.opening_hours}`,
-    tags.phone && `Telefon: ${tags.phone}`
-  ].filter(Boolean).map(escapeHtml);
-  let website = '';
-  try {
-    const url = new URL(tags.website || '');
-    if (url.protocol === 'http:' || url.protocol === 'https:') {
-      website = `<br><a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">Website</a>`;
-    }
-  } catch (error) {
-    /* Ungültige oder fehlende URL wird nicht angezeigt. */
-  }
-  return `<strong>${escapeHtml(tags.name || restaurantType(tags))}</strong>` +
-    `<br>${details.join('<br>')}${website}` +
-    '<br><button type="button" class="navigateRestaurantBtn">🧭 Dorthin navigieren</button>' +
-    '<br><small>Daten: OpenStreetMap-Mitwirkende</small>';
-}
-
-function navigateToRestaurant(feature) {
-  setNavigationEnabled(true);
-  navigationLayer.clearLayers();
-  navigationTarget = feature.latLng;
-  L.marker(navigationTarget)
-    .addTo(navigationLayer)
-    .bindPopup('Navigationsziel');
-  navigationControlElements.start.disabled = false;
-  navigationControlElements.stop.hidden = true;
-  setNavigationMessage('Gaststätte als Ziel gewählt');
-  startWaterNavigation();
-}
-
-function renderRestaurants() {
-  restaurantsLayer.clearLayers();
-  if (!restaurantsVisible) return;
-  const visibleBounds = map.getBounds().pad(0.05);
-  restaurantFeatures
-    .filter(feature => visibleBounds.contains(feature.latLng))
-    .slice(0, 100)
-    .forEach(feature => {
-      const icon = L.divIcon({
-        className: 'restaurantIconWrapper',
-        html: '<span class="restaurantIcon" aria-hidden="true">🍽</span>',
-        iconSize: [34, 34],
-        iconAnchor: [17, 17]
-      });
-      const restaurantMarker = L.marker(feature.latLng, { icon, pane: 'hazardPane' })
-        .bindPopup(restaurantPopup(feature))
-        .addTo(restaurantsLayer);
-      restaurantMarker.on('popupopen', event => {
-        const button = event.popup.getElement()?.querySelector('.navigateRestaurantBtn');
-        if (button) button.onclick = () => navigateToRestaurant(feature);
-      });
-    });
-}
-
-function setRestaurantMessage(message, isError = false) {
-  const status = searchControlElements.restaurantStatus;
-  if (!status) return;
-  status.textContent = message;
-  status.classList.toggle('isError', isError);
-}
-
 function elementGeometries(element) {
   const geometries = [];
   if (Array.isArray(element.geometry)) geometries.push(element.geometry);
@@ -928,116 +958,6 @@ function elementGeometries(element) {
     if (Array.isArray(member.geometry)) geometries.push(member.geometry);
   });
   return geometries;
-}
-
-function restaurantLatLng(element) {
-  const directLatLng = hazardLatLng(element);
-  if (directLatLng) return directLatLng;
-  const coordinates = elementGeometries(element).flat();
-  if (!coordinates.length) return null;
-  const latitudes = coordinates.map(coordinate => Number(coordinate.lat));
-  const longitudes = coordinates.map(coordinate => Number(coordinate.lon));
-  return L.latLng(
-    (Math.min(...latitudes) + Math.max(...latitudes)) / 2,
-    (Math.min(...longitudes) + Math.max(...longitudes)) / 2
-  );
-}
-
-async function fetchRestaurantOverpass(query) {
-  let lastError;
-  for (const url of RESTAURANT_OVERPASS_URLS) {
-    const attemptController = new AbortController();
-    const abortAttempt = () => attemptController.abort();
-    restaurantAbortController.signal.addEventListener('abort', abortAttempt, { once: true });
-    const timeoutId = setTimeout(abortAttempt, RESTAURANT_REQUEST_TIMEOUT_MS);
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        body: new URLSearchParams({ data: query }),
-        signal: attemptController.signal
-      });
-      if (response.ok) return response.json();
-      lastError = new Error(`Overpass-HTTP ${response.status}`);
-    } catch (error) {
-      if (restaurantAbortController.signal.aborted) throw error;
-      lastError = error;
-    } finally {
-      clearTimeout(timeoutId);
-      restaurantAbortController.signal.removeEventListener('abort', abortAttempt);
-    }
-  }
-  throw lastError || new Error('Keine Overpass-Instanz erreichbar');
-}
-
-async function loadRestaurants(forceRefresh = false) {
-  if (!navigator.onLine) {
-    setRestaurantMessage('Gaststättensuche benötigt eine Internetverbindung.', true);
-    return;
-  }
-  if (map.getZoom() < RESTAURANT_MIN_ZOOM) {
-    setRestaurantMessage('Bitte weiter in die Karte hineinzoomen.', true);
-    return;
-  }
-  restaurantsVisible = true;
-  const visibleBounds = map.getBounds();
-  const cacheIsFresh = Date.now() - loadedRestaurantAt <= RESTAURANT_CACHE_MAX_AGE_MS;
-  if (!forceRefresh && restaurantFeatures.length && cacheIsFresh &&
-      loadedRestaurantBounds?.contains(visibleBounds)) {
-    renderRestaurants();
-    setRestaurantMessage(
-      restaurantFeatures.length
-        ? `${restaurantFeatures.length} Gaststätten im Kartenausschnitt gefunden`
-        : 'Keine Gaststätten im Kartenausschnitt gefunden.'
-    );
-    return;
-  }
-
-  const requestBounds = visibleBounds;
-  const bbox = [requestBounds.getSouth(), requestBounds.getWest(),
-    requestBounds.getNorth(), requestBounds.getEast()]
-    .map(value => value.toFixed(6)).join(',');
-  const restaurantQuery = `[out:json][timeout:20][maxsize:8388608];(
-    node["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
-    way["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
-    relation["amenity"~"^(restaurant|cafe|pub|biergarten|fast_food)$"](${bbox});
-  );out body geom qt;`;
-
-  restaurantAbortController?.abort();
-  restaurantAbortController = new AbortController();
-  setRestaurantMessage('Gaststätten werden geladen …');
-  try {
-    const restaurantData = await fetchRestaurantOverpass(restaurantQuery);
-    const restaurantElements = restaurantData.elements || [];
-    const seen = new Set();
-    const rawRestaurants = restaurantElements.flatMap(element => {
-      const latLng = restaurantLatLng(element);
-      const key = `${element.type}/${element.id}`;
-      if (!latLng || seen.has(key)) return [];
-      seen.add(key);
-      return [{ latLng, tags: element.tags || {} }];
-    });
-    restaurantFeatures = rawRestaurants;
-    loadedRestaurantBounds = restaurantFeatures.length ? requestBounds : null;
-    loadedRestaurantAt = restaurantFeatures.length ? Date.now() : 0;
-    renderRestaurants();
-    setRestaurantMessage(
-      restaurantFeatures.length
-        ? `${restaurantFeatures.length} Gaststätten im Kartenausschnitt gefunden`
-        : 'Keine Gaststätten im Kartenausschnitt gefunden.'
-    );
-  } catch (error) {
-    if (error.name === 'AbortError') return;
-    loadedRestaurantBounds = null;
-    loadedRestaurantAt = 0;
-    console.error('Gaststätten konnten nicht geladen werden:', error);
-    setRestaurantMessage('Gaststätten konnten momentan nicht geladen werden.', true);
-  }
-}
-
-function clearRestaurants() {
-  restaurantsVisible = false;
-  restaurantsLayer.clearLayers();
-  setRestaurantMessage('Gaststätten ausgeblendet');
 }
 
 function addMapToolsControl() {
@@ -1059,7 +979,7 @@ function addMapToolsControl() {
 
     mapMenuElements = { button: menuButton, panel: container };
     L.DomEvent.on(menuButton, 'click', () => {
-      if (container.hidden) closeSearchPanel();
+      if (container.hidden) { closeSearchPanel(); closePoiPanel(); }
       container.hidden = !container.hidden;
       menuButton.classList.toggle('isActive', !container.hidden);
       menuButton.setAttribute('aria-expanded', String(!container.hidden));
@@ -1068,8 +988,6 @@ function addMapToolsControl() {
     const tools = [
       ['previousTracks', '🟡 Bereits gefahrene Strecken', togglePreviousTracks],
       ['seamark', '⚓ OpenSeaMap', toggleSeamark],
-      ['locks', '🔒 Schleusen', () => toggleHazard('lock')],
-      ['weirs', '⚠️ Wehre', () => toggleHazard('weir')],
       ['navigation', '🧭 Navigation', () => setNavigationEnabled(!navigationEnabled)]
     ];
 
@@ -1084,12 +1002,6 @@ function addMapToolsControl() {
       mapModeButtons[name] = button;
       container.appendChild(button);
     });
-
-    const hazardStatus = document.createElement('div');
-    hazardStatus.className = 'mapToolStatus';
-    hazardStatus.hidden = true;
-    container.appendChild(hazardStatus);
-    searchControlElements.hazardStatus = hazardStatus;
 
     const panel = document.createElement('div');
     panel.className = 'navigationPanel';
@@ -1126,6 +1038,52 @@ function addMapToolsControl() {
   control.addTo(map);
 }
 
+function addPoiControl() {
+  const control = L.control({ position: 'bottomleft' });
+  control.onAdd = () => {
+    const wrapper = L.DomUtil.create('div', 'poiControl');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'poiMenuButton';
+    button.textContent = '📍';
+    button.setAttribute('aria-label', 'POI-Menü öffnen');
+    button.setAttribute('aria-expanded', 'false');
+    const panel = document.createElement('div');
+    panel.className = 'poiPanel';
+    panel.hidden = true;
+    const buttons = {};
+    Object.entries(POI_TYPES).forEach(([kind, config]) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.textContent = `${config.icon} ${config.label}`;
+      item.setAttribute('aria-pressed', String(poiEnabled[kind]));
+      item.classList.toggle('isActive', poiEnabled[kind]);
+      L.DomEvent.on(item, 'click', () => togglePoi(kind));
+      panel.appendChild(item);
+      buttons[kind] = item;
+    });
+    const status = document.createElement('div');
+    status.className = 'poiStatus';
+    status.hidden = !activePoiTypes().length;
+    panel.appendChild(status);
+    wrapper.append(panel, button);
+    poiControlElements = { wrapper, button, panel, buttons, status };
+    L.DomEvent.on(button, 'click', () => {
+      if (panel.hidden) {
+        closeMapMenu();
+        closeSearchPanel();
+      }
+      panel.hidden = !panel.hidden;
+      button.classList.toggle('isActive', !panel.hidden);
+      button.setAttribute('aria-expanded', String(!panel.hidden));
+    });
+    L.DomEvent.disableClickPropagation(wrapper);
+    L.DomEvent.disableScrollPropagation(wrapper);
+    return wrapper;
+  };
+  control.addTo(map);
+}
+
 function addSearchControl() {
   const control = L.control({ position: 'topleft' });
   control.onAdd = () => {
@@ -1149,24 +1107,12 @@ function addSearchControl() {
     const searchSubmit = document.createElement('button');
     searchSubmit.type = 'button';
     searchSubmit.textContent = 'Suchen';
-    const restaurantActions = document.createElement('div');
-    restaurantActions.className = 'restaurantActions';
-    const restaurantLoad = document.createElement('button');
-    restaurantLoad.type = 'button';
-    restaurantLoad.textContent = '🍽 Gaststätten';
-    const restaurantClear = document.createElement('button');
-    restaurantClear.type = 'button';
-    restaurantClear.textContent = 'Ausblenden';
-    restaurantActions.append(restaurantLoad, restaurantClear);
     const searchStatus = document.createElement('div');
     searchStatus.className = 'searchStatus';
-    const restaurantStatus = document.createElement('div');
-    restaurantStatus.className = 'restaurantStatus';
     const searchResults = document.createElement('div');
     searchResults.className = 'searchResults';
     searchRow.append(searchInput, searchSubmit);
-    searchPanel.append(searchRow, restaurantActions, searchStatus,
-      restaurantStatus, searchResults);
+    searchPanel.append(searchRow, searchStatus, searchResults);
     wrapper.append(searchButton, searchPanel);
 
     searchControlElements = {
@@ -1176,19 +1122,16 @@ function addSearchControl() {
       input: searchInput,
       submit: searchSubmit,
       searchStatus,
-      restaurantStatus,
       results: searchResults
     };
     L.DomEvent.on(searchButton, 'click', () => {
-      if (searchPanel.hidden) closeMapMenu();
+      if (searchPanel.hidden) { closeMapMenu(); closePoiPanel(); }
       searchPanel.hidden = !searchPanel.hidden;
       searchButton.classList.toggle('isActive', !searchPanel.hidden);
       searchButton.setAttribute('aria-expanded', String(!searchPanel.hidden));
       if (!searchPanel.hidden) searchInput.focus();
     });
     L.DomEvent.on(searchSubmit, 'click', searchMap);
-    L.DomEvent.on(restaurantLoad, 'click', () => loadRestaurants(true));
-    L.DomEvent.on(restaurantClear, 'click', clearRestaurants);
     L.DomEvent.on(searchInput, 'keydown', event => {
       if (event.key === 'Enter') searchMap();
     });
@@ -1201,16 +1144,20 @@ function addSearchControl() {
 
 addMapToolsControl();
 addSearchControl();
+addPoiControl();
 map.on('click', chooseNavigationTarget);
 map.on('click', closeMapMenu);
 map.on('click', closeSearchPanel);
-map.on('moveend zoomend', scheduleHazardLoad);
-map.on('moveend zoomend', renderRestaurants);
+map.on('click', closePoiPanel);
+map.on('moveend zoomend', schedulePoiLoad);
 const initialOverlays = savedMapOverlays();
 if (initialOverlays.seamark && navigator.onLine) seamark.addTo(map);
 previousTracksVisible = Boolean(initialOverlays.previousTracks);
 setToolButton('seamark', map.hasLayer(seamark));
 setToolButton('previousTracks', previousTracksVisible);
+locksVisible = poiEnabled.lock;
+weirsVisible = poiEnabled.weir;
+if (activePoiTypes().length) schedulePoiLoad();
 
 window.addEventListener('offline', () => {
   if (map.hasLayer(seamark)) map.removeLayer(seamark);
