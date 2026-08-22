@@ -1,10 +1,11 @@
-const CACHE = 'kajaktracker-v22';
+const CACHE = 'kajaktracker-v23';
 
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
+  './waterway-status.js',
   './offline-map.js',
   './poi-data/regions.json',
   './offline-test/data/spreewald-pois.json',
