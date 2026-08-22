@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="de">
+
 <head>
+
   <meta charset="UTF-8">
 
   <meta
@@ -10,104 +12,220 @@
 
   <title>KajakTracker</title>
 
-  <!-- Lokale Kartenlaufzeiten für einen echten Offline-Neustart -->
-  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="offline-test/vendor/maplibre-gl.css">
+
+  <!-- Leaflet lokal -->
+
+  <link
+    rel="stylesheet"
+    href="vendor/leaflet/leaflet.css"
+  >
+
+
+  <!-- MapLibre lokal -->
+
+  <link
+    rel="stylesheet"
+    href="offline-test/vendor/maplibre-gl.css"
+  >
+
 
   <!-- Eigene CSS-Datei -->
-  <link rel="stylesheet" href="style.css?v=16">
+
+  <link
+    rel="stylesheet"
+    href="style.css?v=16"
+  >
+
 </head>
+
 
 <body>
 
+
 <header>
-  <div class="title">KajakTracker</div>
-  <div id="status" class="status idle">Bereit</div>
+
+  <div class="title">
+    KajakTracker
+  </div>
+
+
+  <div
+    id="status"
+    class="status idle"
+  >
+    Bereit
+  </div>
+
 </header>
+
 
 <main>
 
-  <!-- Karte -->
+
+  <!-- =====================================================
+       KARTE
+       ===================================================== -->
+
   <div id="map"></div>
 
-  <!-- Hauptbedienfeld -->
+
+  <!-- =====================================================
+       HAUPTBEDIENFELD
+       ===================================================== -->
+
   <section class="panel">
 
-    <div id="timer" class="timer">
+
+    <div
+      id="timer"
+      class="timer"
+    >
+
       00:00:00
+
     </div>
+
 
     <div class="stats">
 
-      <div>
-        <span>Entfernung</span>
-        <strong id="distance">0,00 km</strong>
-      </div>
 
       <div>
-        <span>Geschwindigkeit</span>
-        <strong id="speed">0,0 km/h</strong>
+
+        <span>
+          Entfernung
+        </span>
+
+        <strong id="distance">
+          0,00 km
+        </strong>
+
       </div>
 
-      <div>
-        <span>Ø Tempo</span>
-        <strong id="average">0,0 km/h</strong>
-      </div>
 
       <div>
-        <span>Max</span>
-        <strong id="maxSpeed">0,0 km/h</strong>
+
+        <span>
+          Geschwindigkeit
+        </span>
+
+        <strong id="speed">
+          0,0 km/h
+        </strong>
+
       </div>
 
+
       <div>
-        <span>Punkte</span>
-        <strong id="points">0</strong>
+
+        <span>
+          Ø Tempo
+        </span>
+
+        <strong id="average">
+          0,0 km/h
+        </strong>
+
       </div>
+
+
+      <div>
+
+        <span>
+          Max
+        </span>
+
+        <strong id="maxSpeed">
+          0,0 km/h
+        </strong>
+
+      </div>
+
+
+      <div>
+
+        <span>
+          Punkte
+        </span>
+
+        <strong id="points">
+          0
+        </strong>
+
+      </div>
+
 
     </div>
 
-    <!-- Start / Pause / Stop -->
+
+    <!-- ===================================================
+         START / PAUSE / STOP
+         =================================================== -->
+
     <div class="buttons">
+
 
       <button
         id="startBtn"
         class="primary"
       >
+
         ▶ Start
+
       </button>
+
 
       <button
         id="pauseBtn"
         class="pause"
         disabled
       >
+
         Ⅱ Pause
+
       </button>
+
 
       <button
         id="stopBtn"
         class="danger"
         disabled
       >
+
         ■ Stoppen
+
       </button>
+
 
     </div>
 
-    <!-- Standort / GPX -->
+
+    <!-- ===================================================
+         STANDORT / GPX
+         =================================================== -->
+
     <div class="secondaryButtons">
 
+
       <button id="locationBtn">
+
         ◎ Mein Standort
+
       </button>
+
 
       <button id="gpxBtn">
+
         ⇩ GPX Export
+
       </button>
 
+
       <button id="gpxImportBtn">
+
         ⇧ GPX Import
+
       </button>
+
 
       <input
         id="gpxImportInput"
@@ -117,123 +235,257 @@
         hidden
       >
 
+
     </div>
 
-    <!-- Sicherheitshinweis -->
+
+    <!-- ===================================================
+         SICHERHEIT
+         =================================================== -->
+
     <div class="legalNotice">
 
+
       <div class="legalTitle">
+
         ⚠️ Wichtiger Sicherheitshinweis
+
       </div>
 
-      <p>
-        KajakTracker ist eine private Anwendung zur Aufzeichnung
-        und Darstellung von GPS-Tracks und dient ausschließlich als
-        persönliche Orientierungshilfe.
-      </p>
 
       <p>
-        Die Anwendung ist <strong>kein Navigationssystem</strong>
+
+        KajakTracker ist eine private Anwendung zur Aufzeichnung
+        und Darstellung von GPS-Tracks und dient ausschließlich
+        als persönliche Orientierungshilfe.
+
+      </p>
+
+
+      <p>
+
+        Die Anwendung ist
+        <strong>kein Navigationssystem</strong>
         und ersetzt keine amtlichen Seekarten, nautischen
         Informationen, Wetterinformationen oder die persönliche
         Einschätzung der aktuellen Situation. OpenSeaMap und das
         Wasserweg-Routing sind lediglich Orientierungshilfen.
-        Angaben zu Schleusen und Wehren aus freien Kartendaten können
-        unvollständig oder veraltet sein; Beschilderung und Sperrungen
-        vor Ort haben immer Vorrang.
+
       </p>
 
-      <p>
-        GPS-Positionen, Geschwindigkeiten, Entfernungen, Karten
-        und Seezeichen können fehlerhaft, unvollständig, verzögert
-        oder veraltet sein.
-      </p>
 
       <p>
-        Insbesondere auf Gewässern mit Schiffsverkehr, Strömungen,
-        Schleusen, Wehren oder anderen Gefahren ist die jeweilige
-        Situation selbstständig zu beurteilen und die erforderliche
-        Sicherheitsausrüstung zu verwenden.
+
+        Angaben zu Schleusen und Wehren aus freien Kartendaten
+        können unvollständig oder veraltet sein. Beschilderung
+        und Sperrungen vor Ort haben immer Vorrang.
+
       </p>
 
+
       <p>
-        Die Nutzung der Anwendung erfolgt auf eigene Verantwortung.
-        Eine Haftung wird, soweit gesetzlich zulässig, ausgeschlossen.
-        Gesetzlich zwingende Haftungsfälle bleiben unberührt.
+
+        GPS-Positionen, Geschwindigkeiten, Entfernungen,
+        Karten und Seezeichen können fehlerhaft,
+        unvollständig, verzögert oder veraltet sein.
+
       </p>
+
+
+      <p>
+
+        Insbesondere auf Gewässern mit Schiffsverkehr,
+        Strömungen, Schleusen, Wehren oder anderen Gefahren
+        ist die jeweilige Situation selbstständig zu beurteilen
+        und die erforderliche Sicherheitsausrüstung zu verwenden.
+
+      </p>
+
+
+      <p>
+
+        Die Nutzung der Anwendung erfolgt auf eigene
+        Verantwortung. Eine Haftung wird, soweit gesetzlich
+        zulässig, ausgeschlossen. Gesetzlich zwingende
+        Haftungsfälle bleiben unberührt.
+
+      </p>
+
 
       <p class="privateUse">
+
         <strong>
-          Private Anwendung – nicht zur öffentlichen Nutzung oder
-          als professionelle Navigationshilfe bestimmt.
+
+          Private Anwendung – nicht zur öffentlichen Nutzung
+          oder als professionelle Navigationshilfe bestimmt.
+
         </strong>
+
       </p>
 
+
       <div class="privacyNotice">
-        <div class="legalTitle">Datenschutz / externe Dienste</div>
+
+
+        <div class="legalTitle">
+
+          Datenschutz / externe Dienste
+
+        </div>
+
 
         <p>
-          Aufgezeichnete Fahrten und GPS-Tracks werden lokal im Browser
-          beziehungsweise auf dem Gerät gespeichert. Eine zentrale Speicherung
-          dieser Fahrten durch den Betreiber findet nicht statt.
+
+          Aufgezeichnete Fahrten und GPS-Tracks werden lokal
+          im Browser beziehungsweise auf dem Gerät gespeichert.
+          Eine zentrale Speicherung dieser Fahrten durch den
+          Betreiber findet nicht statt.
+
         </p>
 
-        <p>
-          Für Karten, Suche, Schleusen und Wehre, Gaststätten sowie
-          Wasserweg-Routing werden externe Dienste aufgerufen. Dabei können
-          technisch notwendige Daten wie IP-Adresse, angefragter
-          Kartenausschnitt, Suchbegriff oder Zielkoordinate übertragen werden.
-        </p>
 
         <p>
-          Verwendete Dienste können insbesondere OpenStreetMap, OpenSeaMap,
-          Nominatim, Overpass API und BRouter sein. Die jeweiligen Anbieter
-          verarbeiten diese Daten nach ihren eigenen Datenschutzbestimmungen.
+
+          Für Karten, Suche, Schleusen und Wehre,
+          Gaststätten sowie Wasserweg-Routing werden externe
+          Dienste aufgerufen. Dabei können technisch notwendige
+          Daten wie IP-Adresse, angefragter Kartenausschnitt,
+          Suchbegriff oder Zielkoordinate übertragen werden.
+
         </p>
+
+
+        <p>
+
+          Verwendete Dienste können insbesondere
+          OpenStreetMap, OpenSeaMap, Nominatim,
+          Overpass API und BRouter sein.
+
+        </p>
+
+
       </div>
+
 
     </div>
 
+
   </section>
 
-  <!-- Fahrtenverwaltung -->
+
+  <!-- =====================================================
+       FAHRTEN
+       ===================================================== -->
+
   <section class="tripsPanel">
 
+
     <div class="tripsHeader">
-      <h2>Meine Fahrten</h2>
+
+
+      <h2>
+        Meine Fahrten
+      </h2>
+
 
       <button
         id="clearTripsBtn"
         class="clearTripsBtn"
       >
+
         Alle löschen
+
       </button>
+
+
     </div>
 
-    <div id="tripsList" class="tripsList">
+
+    <div
+      id="tripsList"
+      class="tripsList"
+    >
+
       <div class="noTrips">
+
         Noch keine gespeicherten Fahrten.
+
       </div>
+
     </div>
+
 
   </section>
 
+
 </main>
 
-<!-- Lokale Kartenlaufzeiten -->
-<script src="vendor/leaflet/leaflet.js"></script>
-<script src="offline-test/vendor/maplibre-gl.js"></script>
-<script src="offline-test/vendor/pmtiles.js"></script>
-<script src="offline-map.js?v=16"></script>
 
-<!-- Eigene JavaScript-Datei -->
-<script src="app.js?v=16"></script>
+<!-- =======================================================
+     KARTENBIBLIOTHEKEN
+     ======================================================= -->
 
-<!-- Fester GPX-Import -->
-<script src="gpx-import.js?v=1"></script>
+<script
+  src="vendor/leaflet/leaflet.js"
+></script>
 
-<!-- Moderne Tourenliste + Detailansicht -->
-<script src="tour-ui.js?v=1"></script>
+
+<script
+  src="offline-test/vendor/maplibre-gl.js"
+></script>
+
+
+<script
+  src="offline-test/vendor/pmtiles.js"
+></script>
+
+
+<script
+  src="offline-map.js?v=16"
+></script>
+
+
+<!-- =======================================================
+     GPS-QUALITÄT
+
+     WICHTIG:
+     MUSS VOR app.js geladen werden,
+     damit der bestehende GPS-Watcher
+     erweitert werden kann.
+     ======================================================= -->
+
+<script
+  src="gps-status.js?v=1"
+></script>
+
+
+<!-- =======================================================
+     HAUPT-APP
+     ======================================================= -->
+
+<script
+  src="app.js?v=16"
+></script>
+
+
+<!-- =======================================================
+     GPX IMPORT
+     ======================================================= -->
+
+<script
+  src="gpx-import.js?v=1"
+></script>
+
+
+<!-- =======================================================
+     TOURENANSICHT
+     ======================================================= -->
+
+<script
+  src="tour-ui.js?v=8"
+></script>
+
 
 </body>
+
 </html>
