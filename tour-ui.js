@@ -1,6 +1,6 @@
 /* =========================================================
    KAJAKTRACKER – MODERNE TOURENANSICHT
-   Version 7
+   Version 8
 
    - Neueste Tour zuerst
    - Einheitlicher Titel: Tour TT.MM.JJJJ
@@ -15,6 +15,7 @@
    - Bearbeiten
    - GPX Export
    - Löschen
+   - Start/Ziel eindeutig beschriftet
 
    WICHTIG:
    Trackpunkte, Entfernungen, Zeiten,
@@ -28,16 +29,10 @@
   'use strict';
 
 
-  /* =========================================================
-     PRÜFUNG
-     ========================================================= */
-
   if (typeof getTrips !== 'function') {
-
     console.error(
       'Tour-UI: getTrips() ist nicht verfügbar.'
     );
-
     return;
   }
 
@@ -97,13 +92,8 @@
     }
 
 
-    /* =====================================================
-       TOURENKARTE
-       ===================================================== */
-
     .tourListCard {
       display: grid;
-
       grid-template-columns:
         68px
         1fr
@@ -150,10 +140,6 @@
     }
 
 
-    /* =====================================================
-       KAJAK-BILD
-       ===================================================== */
-
     .tourKayakIcon {
       display: block;
 
@@ -179,10 +165,6 @@
       border-radius: 18px;
     }
 
-
-    /* =====================================================
-       TEXT
-       ===================================================== */
 
     .tourListMain {
       display: block;
@@ -273,10 +255,6 @@
     }
 
 
-    /* =====================================================
-       ICONS
-       ===================================================== */
-
     .tourMetaIcon {
       display: inline-grid;
 
@@ -311,7 +289,7 @@
 
 
     /* =====================================================
-       DETAIL
+       DETAILANSICHT
        ===================================================== */
 
     .tourDetail {
@@ -434,6 +412,74 @@
 
 
     /* =====================================================
+       START / ZIEL MARKER
+       ===================================================== */
+
+    .tourStartEndMarker {
+      background: transparent !important;
+      border: 0 !important;
+    }
+
+
+    .tourMarkerWrap {
+      display: flex;
+      align-items: center;
+
+      gap: 5px;
+
+      white-space: nowrap;
+    }
+
+
+    .tourMarkerDot {
+      display: block;
+
+      width: 18px;
+      height: 18px;
+
+      min-width: 18px;
+
+      border: 3px solid white;
+
+      border-radius: 50%;
+
+      box-shadow:
+        0 1px 4px rgba(0,0,0,.35);
+    }
+
+
+    .tourMarkerDot.start {
+      background: #24ae59;
+    }
+
+
+    .tourMarkerDot.end {
+      background: #ef4035;
+    }
+
+
+    .tourMarkerLabel {
+      display: block;
+
+      padding: 3px 7px;
+
+      border-radius: 8px;
+
+      background: rgba(255,255,255,.94);
+
+      box-shadow:
+        0 1px 4px rgba(0,0,0,.25);
+
+      color: #183f55;
+
+      font-size: 12px;
+      font-weight: 900;
+
+      line-height: 1;
+    }
+
+
+    /* =====================================================
        STATISTIK
        ===================================================== */
 
@@ -496,10 +542,6 @@
       line-height: 1.15;
     }
 
-
-    /* =====================================================
-       INFO
-       ===================================================== */
 
     .tourInfoCard {
       margin-top: 15px;
@@ -582,10 +624,6 @@
     }
 
 
-    /* =====================================================
-       BEMERKUNG
-       ===================================================== */
-
     .tourNoteCard {
       margin-top: 15px;
 
@@ -640,10 +678,6 @@
       font-weight: 600;
     }
 
-
-    /* =====================================================
-       AKTIONEN
-       ===================================================== */
 
     .tourActionCard {
       display: grid;
@@ -885,10 +919,6 @@
     }
 
 
-    /* =====================================================
-       SMARTPHONE
-       ===================================================== */
-
     @media (max-width: 420px) {
 
       .tourListCard {
@@ -1072,12 +1102,10 @@
 
 
   /* =========================================================
-     HILFSFUNKTIONEN
+     HELFER
      ========================================================= */
 
-  function sleep(
-    milliseconds
-  ) {
+  function sleep(milliseconds) {
 
     return new Promise(
       function (resolve) {
@@ -1091,9 +1119,7 @@
   }
 
 
-  function getTripStart(
-    trip
-  ) {
+  function getTripStart(trip) {
 
     return (
       trip.startedAt ||
@@ -1105,9 +1131,7 @@
   }
 
 
-  function dateValue(
-    trip
-  ) {
+  function dateValue(trip) {
 
     const value =
       getTripStart(
@@ -1134,9 +1158,7 @@
   }
 
 
-  function formatDateLong(
-    value
-  ) {
+  function formatDateLong(value) {
 
     const date =
       new Date(
@@ -1165,9 +1187,7 @@
   }
 
 
-  function formatDateShort(
-    value
-  ) {
+  function formatDateShort(value) {
 
     const date =
       new Date(
@@ -1196,9 +1216,7 @@
   }
 
 
-  function formatClock(
-    value
-  ) {
+  function formatClock(value) {
 
     const date =
       new Date(
@@ -1226,9 +1244,7 @@
   }
 
 
-  function formatDuration(
-    seconds
-  ) {
+  function formatDuration(seconds) {
 
     const total =
       Math.max(
@@ -1274,9 +1290,7 @@
   }
 
 
-  function formatKm(
-    meters
-  ) {
+  function formatKm(meters) {
 
     return (
       (
@@ -1293,9 +1307,7 @@
   }
 
 
-  function formatKmh(
-    ms
-  ) {
+  function formatKmh(ms) {
 
     return (
       (
@@ -1312,9 +1324,7 @@
   }
 
 
-  function tripAverage(
-    trip
-  ) {
+  function tripAverage(trip) {
 
     if (
       Number.isFinite(
@@ -1348,9 +1358,7 @@
   }
 
 
-  function tripTitle(
-    trip
-  ) {
+  function tripTitle(trip) {
 
     const formatted =
       formatDateShort(
@@ -1366,9 +1374,7 @@
   }
 
 
-  function tripLocation(
-    trip
-  ) {
+  function tripLocation(trip) {
 
     const value =
       String(
@@ -1382,7 +1388,6 @@
       value !==
         'Unbekannter Ort'
     ) {
-
       return value;
     }
 
@@ -1391,9 +1396,7 @@
   }
 
 
-  function tripNote(
-    trip
-  ) {
+  function tripNote(trip) {
 
     return String(
       trip.note ||
@@ -1402,9 +1405,7 @@
   }
 
 
-  function tripEndTime(
-    trip
-  ) {
+  function tripEndTime(trip) {
 
     const start =
       new Date(
@@ -1424,30 +1425,22 @@
 
 
     return new Date(
-
       start.getTime()
-
       +
-
       Math.max(
         0,
         Number(
           trip.duration
         ) || 0
       )
-
       * 1000
     );
   }
 
 
-  function escapeHtml(
-    value
-  ) {
+  function escapeHtml(value) {
 
-    return String(
-      value
-    )
+    return String(value)
       .replace(
         /&/g,
         '&amp;'
@@ -1472,7 +1465,7 @@
 
 
   /* =========================================================
-     ORTS-CACHE
+     ORTSCACHE
      ========================================================= */
 
   function loadLocationCache() {
@@ -1508,16 +1501,12 @@
   }
 
 
-  function saveLocationCache(
-    cache
-  ) {
+  function saveLocationCache(cache) {
 
     try {
 
       localStorage.setItem(
-
         LOCATION_CACHE_KEY,
-
         JSON.stringify(
           cache
         )
@@ -1533,13 +1522,7 @@
   }
 
 
-  /* =========================================================
-     STARTPUNKT
-     ========================================================= */
-
-  function firstTrackPoint(
-    trip
-  ) {
+  function firstTrackPoint(trip) {
 
     if (
       !trip ||
@@ -1547,7 +1530,6 @@
         trip.track
       )
     ) {
-
       return null;
     }
 
@@ -1594,13 +1576,7 @@
   }
 
 
-  /* =========================================================
-     NOMINATIM DATEN
-     ========================================================= */
-
-  function locationNameFromNominatim(
-    data
-  ) {
+  function locationNameFromNominatim(data) {
 
     const address =
       data &&
@@ -1631,13 +1607,7 @@
   }
 
 
-  /* =========================================================
-     REVERSE GEOCODING
-     ========================================================= */
-
-  async function reverseGeocodeTrip(
-    trip
-  ) {
+  async function reverseGeocodeTrip(trip) {
 
     const existing =
       String(
@@ -1651,7 +1621,6 @@
       existing !==
         'Unbekannter Ort'
     ) {
-
       return existing;
     }
 
@@ -1663,7 +1632,6 @@
 
 
     if (!point) {
-
       return 'Unbekannter Ort';
     }
 
@@ -1675,7 +1643,6 @@
       navigator.onLine ===
         false
     ) {
-
       return 'Unbekannter Ort';
     }
 
@@ -1708,7 +1675,6 @@
         cacheKey
       ]
     ) {
-
       return cache[
         cacheKey
       ];
@@ -1720,7 +1686,6 @@
         cacheKey
       )
     ) {
-
       return locationRequests.get(
         cacheKey
       );
@@ -1817,7 +1782,6 @@
 
 
           if (!name) {
-
             return 'Unbekannter Ort';
           }
 
@@ -1864,10 +1828,6 @@
   }
 
 
-  /* =========================================================
-     METADATEN SPEICHERN
-     ========================================================= */
-
   function updateTripMetadata(
     id,
     locationName,
@@ -1903,7 +1863,6 @@
         trips
       )
     ) {
-
       return false;
     }
 
@@ -1928,7 +1887,6 @@
     if (
       index < 0
     ) {
-
       return false;
     }
 
@@ -1967,9 +1925,7 @@
     try {
 
       localStorage.setItem(
-
         STORAGE_KEY,
-
         JSON.stringify(
           trips
         )
@@ -1990,10 +1946,6 @@
     }
   }
 
-
-  /* =========================================================
-     EINZELNEN ORT ERMITTELN
-     ========================================================= */
 
   async function fillTripLocationIfMissing(
     trip,
@@ -2017,7 +1969,6 @@
       existing !==
         'Unbekannter Ort'
     ) {
-
       return false;
     }
 
@@ -2033,18 +1984,14 @@
       name ===
         'Unbekannter Ort'
     ) {
-
       return false;
     }
 
 
     const saved =
       updateTripMetadata(
-
         trip.id,
-
         name,
-
         tripNote(
           trip
         )
@@ -2052,7 +1999,6 @@
 
 
     if (!saved) {
-
       return false;
     }
 
@@ -2061,7 +2007,6 @@
       refreshList !==
         false
     ) {
-
       modernRenderTrips(
         false
       );
@@ -2087,7 +2032,6 @@
 
 
       if (element) {
-
         element.textContent =
           name;
       }
@@ -2097,10 +2041,6 @@
     return true;
   }
 
-
-  /* =========================================================
-     ALLE FEHLENDEN ORTE HINTERGRUND
-     ========================================================= */
 
   function requestAutomaticLocations() {
 
@@ -2114,11 +2054,6 @@
       return;
     }
 
-
-    /*
-      Nicht sofort beim Rendern loslaufen,
-      sondern kurz warten.
-    */
 
     setTimeout(
       processAutomaticLocations,
@@ -2147,7 +2082,6 @@
       navigator.onLine ===
         false
     ) {
-
       return;
     }
 
@@ -2158,6 +2092,10 @@
 
     autoLocationRequested =
       false;
+
+
+    const failedIds =
+      new Set();
 
 
     try {
@@ -2180,6 +2118,12 @@
 
 
               return (
+                !failedIds.has(
+                  String(
+                    item.id
+                  )
+                )
+                &&
                 (
                   !location
                   ||
@@ -2200,13 +2144,6 @@
         }
 
 
-        const before =
-          String(
-            trip.locationName ||
-            ''
-          );
-
-
         const changed =
           await fillTripLocationIfMissing(
             trip,
@@ -2214,48 +2151,13 @@
           );
 
 
-        /*
-          Wenn nichts ermittelt werden konnte,
-          diesen Eintrag für diesen Durchlauf
-          nicht endlos erneut abfragen.
-        */
-
         if (!changed) {
 
-          const tripsNow =
-            getTrips();
-
-
-          const current =
-            tripsNow.find(
-              function (item) {
-
-                return (
-                  String(item.id)
-                  ===
-                  String(trip.id)
-                );
-              }
-            );
-
-
-          if (
-            current &&
+          failedIds.add(
             String(
-              current.locationName ||
-              ''
+              trip.id
             )
-            === before
-          ) {
-
-            /*
-              Die Tour erhält für diesen
-              App-Lauf keine weitere Anfrage.
-            */
-
-            current.__skipAutoLocation =
-              true;
-          }
+          );
         }
 
 
@@ -2269,14 +2171,6 @@
         );
 
 
-        /*
-          Temporäre Skip-Markierungen sind
-          nicht gespeichert, sondern nur in
-          den gerade gelesenen Objekten.
-          Deshalb zusätzlich prüfen, ob noch
-          online.
-        */
-
         if (
           typeof navigator !==
             'undefined'
@@ -2284,68 +2178,6 @@
           navigator.onLine ===
             false
         ) {
-
-          break;
-        }
-
-
-        /*
-          Verhindert, dass ein dauerhaft
-          nicht auflösbarer Track endlos
-          wiederholt wird.
-        */
-
-        const remaining =
-          getTrips().filter(
-            function (item) {
-
-              const location =
-                String(
-                  item.locationName ||
-                  ''
-                ).trim();
-
-
-              return (
-                (
-                  !location
-                  ||
-                  location ===
-                    'Unbekannter Ort'
-                )
-                &&
-                firstTrackPoint(
-                  item
-                )
-              );
-            }
-          );
-
-
-        if (!remaining.length) {
-          break;
-        }
-
-
-        /*
-          Wenn nur dieselbe nicht auflösbare
-          Tour übrig ist, diesen Lauf beenden.
-        */
-
-        if (
-          remaining.length === 1
-          &&
-          String(
-            remaining[0].id
-          )
-          ===
-          String(
-            trip.id
-          )
-          &&
-          !changed
-        ) {
-
           break;
         }
       }
@@ -2399,7 +2231,7 @@
 
 
   /* =========================================================
-     BEARBEITEN DIALOG
+     BEARBEITEN
      ========================================================= */
 
   let editOverlay =
@@ -2423,7 +2255,6 @@
     if (
       editOverlay
     ) {
-
       return;
     }
 
@@ -2451,9 +2282,7 @@
       >
 
         <div class="tourEditTitle">
-
           Tour bearbeiten
-
         </div>
 
 
@@ -2494,9 +2323,7 @@
 
 
         <div class="tourEditCounter">
-
           0 / 1000
-
         </div>
 
 
@@ -2506,9 +2333,7 @@
             type="button"
             class="tourEditCancel"
           >
-
             Abbrechen
-
           </button>
 
 
@@ -2516,9 +2341,7 @@
             type="button"
             class="tourEditSave"
           >
-
             Speichern
-
           </button>
 
         </div>
@@ -2590,7 +2413,6 @@
           event.target ===
           editOverlay
         ) {
-
           closeEditDialog();
         }
       }
@@ -2598,9 +2420,7 @@
   }
 
 
-  function openEditDialog(
-    id
-  ) {
+  function openEditDialog(id) {
 
     const trip =
       getTrips().find(
@@ -2683,7 +2503,6 @@
     if (
       editOverlay
     ) {
-
       editOverlay.hidden =
         true;
     }
@@ -2695,7 +2514,6 @@
     if (
       !currentDetailId
     ) {
-
       return;
     }
 
@@ -2706,7 +2524,6 @@
 
 
     if (!location) {
-
       location =
         'Unbekannter Ort';
     }
@@ -2755,7 +2572,7 @@
 
 
   /* =========================================================
-     DETAIL DOM
+     DETAIL-DOM
      ========================================================= */
 
   function ensureDetail() {
@@ -2763,7 +2580,6 @@
     if (
       detailRoot
     ) {
-
       return;
     }
 
@@ -2795,9 +2611,7 @@
 
 
         <div class="tourDetailTitle">
-
           Tour
-
         </div>
 
 
@@ -3055,7 +2869,6 @@
             typeof deleteTrip !==
               'function'
           ) {
-
             return;
           }
 
@@ -3065,7 +2878,6 @@
               'Möchtest du diese Tour wirklich löschen?'
             )
           ) {
-
             return;
           }
 
@@ -3088,9 +2900,7 @@
      TOUR ÖFFNEN
      ========================================================= */
 
-  function openDetail(
-    id
-  ) {
+  function openDetail(id) {
 
     const trip =
       getTrips().find(
@@ -3295,15 +3105,12 @@
      DETAILKARTE
      ========================================================= */
 
-  function drawDetailMap(
-    trip
-  ) {
+  function drawDetailMap(trip) {
 
     if (
       typeof L ===
       'undefined'
     ) {
-
       return;
     }
 
@@ -3340,6 +3147,9 @@
       detailMap.removeLayer(
         detailTrackLayer
       );
+
+      detailTrackLayer =
+        null;
     }
 
 
@@ -3350,6 +3160,9 @@
       detailMap.removeLayer(
         detailStartMarker
       );
+
+      detailStartMarker =
+        null;
     }
 
 
@@ -3360,6 +3173,9 @@
       detailMap.removeLayer(
         detailEndMarker
       );
+
+      detailEndMarker =
+        null;
     }
 
 
@@ -3403,10 +3219,11 @@
     if (
       latLngs.length < 2
     ) {
-
       return;
     }
 
+
+    /* Track */
 
     detailTrackLayer =
       L.polyline(
@@ -3419,29 +3236,63 @@
             6,
 
           opacity:
-            .96
+            .96,
+
+          lineCap:
+            'round',
+
+          lineJoin:
+            'round'
         }
       )
       .addTo(
         detailMap
+      );
+
+
+    /* START */
+
+    const startIcon =
+      L.divIcon(
+        {
+          className:
+            'tourStartEndMarker',
+
+          html:
+            `
+              <div class="tourMarkerWrap">
+
+                <span
+                  class="tourMarkerDot start"
+                ></span>
+
+                <span
+                  class="tourMarkerLabel"
+                >
+                  Start
+                </span>
+
+              </div>
+            `,
+
+          iconSize:
+            [80, 24],
+
+          iconAnchor:
+            [9, 12]
+        }
       );
 
 
     detailStartMarker =
-      L.circleMarker(
+      L.marker(
         latLngs[0],
         {
-          radius: 8,
+          icon:
+            startIcon,
 
-          color:
-            '#ffffff',
-
-          weight: 4,
-
-          fillColor:
-            '#24ae59',
-
-          fillOpacity: 1
+          interactive:
+            false
         }
       )
       .addTo(
@@ -3449,23 +3300,51 @@
       );
 
 
+    /* ZIEL */
+
+    const endIcon =
+      L.divIcon(
+        {
+          className:
+            'tourStartEndMarker',
+
+          html:
+            `
+              <div class="tourMarkerWrap">
+
+                <span
+                  class="tourMarkerDot end"
+                ></span>
+
+                <span
+                  class="tourMarkerLabel"
+                >
+                  Ziel
+                </span>
+
+              </div>
+            `,
+
+          iconSize:
+            [75, 24],
+
+          iconAnchor:
+            [9, 12]
+        }
+      );
+
+
     detailEndMarker =
-      L.circleMarker(
+      L.marker(
         latLngs[
           latLngs.length - 1
         ],
         {
-          radius: 8,
+          icon:
+            endIcon,
 
-          color:
-            '#ffffff',
-
-          weight: 4,
-
-          fillColor:
-            '#ef4035',
-
-          fillOpacity: 1
+          interactive:
+            false
         }
       )
       .addTo(
@@ -3474,12 +3353,14 @@
 
 
     detailMap.fitBounds(
-      latLngs,
+      L.latLngBounds(
+        latLngs
+      ),
       {
         padding:
           [
-            28,
-            28
+            40,
+            40
           ]
       }
     );
@@ -3548,7 +3429,6 @@
     if (
       !container
     ) {
-
       return;
     }
 
@@ -3787,10 +3667,6 @@
   }
 
 
-  /* =========================================================
-     BESTEHENDE FUNKTIONEN
-     ========================================================= */
-
   window.renderTrips =
     modernRenderTrips;
 
@@ -3798,10 +3674,6 @@
   window.viewTrip =
     openDetail;
 
-
-  /* =========================================================
-     ONLINE WIEDER VERFÜGBAR
-     ========================================================= */
 
   window.addEventListener(
     'online',
@@ -3811,10 +3683,6 @@
     }
   );
 
-
-  /* =========================================================
-     START
-     ========================================================= */
 
   modernRenderTrips();
 
