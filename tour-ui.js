@@ -1,6 +1,6 @@
 /* =========================================================
    KAJAKTRACKER – MODERNE TOURENANSICHT
-   Version 5
+   Version 6
 
    - Neueste Tour zuerst
    - Einheitlicher Titel: Tour TT.MM.JJJJ
@@ -8,16 +8,18 @@
    - Moderne Tourenkarten
    - Detailansicht
    - Ort
+   - Automatische Ortsermittlung aus Start-GPS
+   - Orts-Cache
    - Bemerkung
    - Bearbeiten
    - GPX Export
    - Löschen
 
    WICHTIG:
-   Die vorhandenen Trackpunkte, Entfernungen, Zeiten,
+   Vorhandene Trackpunkte, Entfernungen, Zeiten,
    Geschwindigkeiten und GPX-Daten werden NICHT verändert.
 
-   Speicher bleibt:
+   Speicher:
    localStorage -> kajakTrips
    ========================================================= */
 
@@ -30,11 +32,9 @@
      ========================================================= */
 
   if (typeof getTrips !== 'function') {
-
     console.error(
       'Tour-UI: getTrips() ist nicht verfügbar.'
     );
-
     return;
   }
 
@@ -45,14 +45,20 @@
       : 'kajakTrips';
 
 
+  const LOCATION_CACHE_KEY =
+    'kajakTripLocationCacheV1';
+
+
+  const locationRequests =
+    new Map();
+
+
   /* =========================================================
      DESIGN
      ========================================================= */
 
   const style =
-    document.createElement(
-      'style'
-    );
+    document.createElement('style');
 
 
   style.textContent = `
@@ -66,12 +72,10 @@
       background: #f7f9fa !important;
     }
 
-
     .tripsHeader {
       margin-bottom: 16px;
       padding: 0 2px;
     }
-
 
     .tripsHeader h2 {
       color: #183f55;
@@ -86,36 +90,26 @@
 
     .tourListCard {
       display: grid;
-
-      grid-template-columns:
-        68px
-        1fr
-        26px;
-
+      grid-template-columns: 68px 1fr 26px;
       align-items: center;
-
       gap: 14px;
 
       width: 100%;
 
       margin: 0 0 14px;
-
       padding: 18px 15px;
 
       border: 1px solid #edf1f2;
-
       border-radius: 20px;
 
       background: #ffffff;
 
       box-shadow:
-        0 3px 10px
-        rgba(24, 63, 85, .10);
+        0 3px 10px rgba(24, 63, 85, .10);
 
       color: #183f55;
 
       text-align: left;
-
       cursor: pointer;
 
       transition:
@@ -123,13 +117,11 @@
         box-shadow .12s ease;
     }
 
-
     .tourListCard:active {
       transform: scale(.985);
 
       box-shadow:
-        0 2px 6px
-        rgba(24, 63, 85, .10);
+        0 2px 6px rgba(24, 63, 85, .10);
     }
 
 
@@ -149,7 +141,6 @@
 
       background: #e7f4f5;
     }
-
 
     .tourKayakIcon img {
       display: block;
@@ -172,7 +163,6 @@
       min-width: 0;
     }
 
-
     .tourListTitle {
       display: block;
 
@@ -191,12 +181,10 @@
       white-space: nowrap;
     }
 
-
     .tourListDate,
     .tourListDistance,
     .tourListLocation {
       display: flex;
-
       align-items: center;
 
       gap: 7px;
@@ -206,14 +194,12 @@
       line-height: 1.35;
     }
 
-
     .tourListDate {
       color: #365f75;
 
       font-size: 14px;
       font-weight: 750;
     }
-
 
     .tourListDistance {
       color: #43a5ad;
@@ -222,14 +208,12 @@
       font-weight: 900;
     }
 
-
     .tourListLocation {
       color: #4d7783;
 
       font-size: 13px;
       font-weight: 750;
     }
-
 
     .tourListNote {
       display: -webkit-box;
@@ -266,12 +250,10 @@
       color: #08728b;
     }
 
-
     .tourMetaIcon svg {
       width: 18px;
       height: 18px;
     }
-
 
     .tourChevron {
       display: block;
@@ -309,7 +291,6 @@
       -webkit-overflow-scrolling: touch;
     }
 
-
     .tourDetail[hidden] {
       display: none !important;
     }
@@ -338,10 +319,7 @@
       min-height: 72px;
 
       padding:
-        max(
-          10px,
-          env(safe-area-inset-top)
-        )
+        max(10px, env(safe-area-inset-top))
         10px
         10px;
 
@@ -349,7 +327,6 @@
 
       color: white;
     }
-
 
     .tourDetailHeader button {
       display: grid;
@@ -371,7 +348,6 @@
 
       cursor: pointer;
     }
-
 
     .tourDetailTitle {
       overflow: hidden;
@@ -404,15 +380,11 @@
       background: #dfe9e5;
     }
 
-
     .tourDetailBody {
       padding:
         18px
         14px
-        calc(
-          30px +
-          env(safe-area-inset-bottom)
-        );
+        calc(30px + env(safe-area-inset-bottom));
 
       background: #f7f9fa;
     }
@@ -438,10 +410,8 @@
       background: white;
 
       box-shadow:
-        0 3px 10px
-        rgba(24, 63, 85, .07);
+        0 3px 10px rgba(24, 63, 85, .07);
     }
-
 
     .tourStat {
       padding: 20px 10px;
@@ -449,18 +419,13 @@
       text-align: center;
     }
 
-
     .tourStat:nth-child(odd) {
-      border-right:
-        1px solid #d9e8eb;
+      border-right: 1px solid #d9e8eb;
     }
-
 
     .tourStat:nth-child(n+3) {
-      border-top:
-        1px solid #d9e8eb;
+      border-top: 1px solid #d9e8eb;
     }
-
 
     .tourStatLabel {
       margin-bottom: 7px;
@@ -470,7 +435,6 @@
       font-size: 13px;
       font-weight: 850;
     }
-
 
     .tourStatValue {
       color: #183f55;
@@ -483,7 +447,7 @@
 
 
     /* =====================================================
-       INFORMATIONS-KARTEN
+       INFO-KARTEN
        ===================================================== */
 
     .tourInfoCard {
@@ -498,10 +462,8 @@
       background: white;
 
       box-shadow:
-        0 3px 10px
-        rgba(24, 63, 85, .07);
+        0 3px 10px rgba(24, 63, 85, .07);
     }
-
 
     .tourInfoRow {
       display: flex;
@@ -510,7 +472,6 @@
 
       gap: 12px;
     }
-
 
     .tourInfoIcon {
       display: grid;
@@ -524,18 +485,15 @@
       color: #08728b;
     }
 
-
     .tourInfoIcon svg {
       width: 27px;
       height: 27px;
     }
 
-
     .tourInfoContent {
       min-width: 0;
       flex: 1;
     }
-
 
     .tourInfoLabel {
       color: #4d7b86;
@@ -543,7 +501,6 @@
       font-size: 12px;
       font-weight: 800;
     }
-
 
     .tourInfoValue {
       margin-top: 2px;
@@ -555,7 +512,6 @@
 
       overflow-wrap: anywhere;
     }
-
 
     .tourInfoSub {
       margin-top: 3px;
@@ -583,10 +539,8 @@
       background: white;
 
       box-shadow:
-        0 3px 10px
-        rgba(24, 63, 85, .07);
+        0 3px 10px rgba(24, 63, 85, .07);
     }
-
 
     .tourNoteHeader {
       display: flex;
@@ -600,7 +554,6 @@
       font-size: 17px;
       font-weight: 900;
     }
-
 
     .tourNoteText {
       margin-top: 12px;
@@ -616,7 +569,6 @@
 
       overflow-wrap: anywhere;
     }
-
 
     .tourNoteText.isEmpty {
       color: #8aa0a8;
@@ -642,7 +594,6 @@
       margin-top: 16px;
     }
 
-
     .tourActionCard button {
       width: 100%;
 
@@ -660,20 +611,17 @@
       cursor: pointer;
     }
 
-
     .tourEditBtn {
       border: 1.5px solid #56a8b3;
 
       color: #08728b;
     }
 
-
     .tourExportBtn {
       border: 1.5px solid #56a8b3;
 
       color: #08728b;
     }
-
 
     .tourDeleteBtn {
       grid-column: 1 / -1;
@@ -701,37 +649,23 @@
       justify-content: center;
 
       padding:
-        max(
-          18px,
-          env(safe-area-inset-top)
-        )
+        max(18px, env(safe-area-inset-top))
         18px
-        max(
-          18px,
-          env(safe-area-inset-bottom)
-        );
+        max(18px, env(safe-area-inset-bottom));
 
       background:
         rgba(12, 37, 49, .45);
 
-      backdrop-filter:
-        blur(4px);
-
-      -webkit-backdrop-filter:
-        blur(4px);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
     }
-
 
     .tourEditOverlay[hidden] {
       display: none !important;
     }
 
-
     .tourEditDialog {
-      width: min(
-        100%,
-        520px
-      );
+      width: min(100%, 520px);
 
       max-height: 90vh;
 
@@ -744,10 +678,8 @@
       background: white;
 
       box-shadow:
-        0 15px 45px
-        rgba(0, 0, 0, .22);
+        0 15px 45px rgba(0, 0, 0, .22);
     }
-
 
     .tourEditTitle {
       color: #183f55;
@@ -755,7 +687,6 @@
       font-size: 22px;
       font-weight: 900;
     }
-
 
     .tourEditSubtitle {
       margin-top: 5px;
@@ -766,7 +697,6 @@
       font-size: 13px;
       font-weight: 650;
     }
-
 
     .tourEditField {
       display: block;
@@ -779,7 +709,6 @@
       font-weight: 850;
     }
 
-
     .tourEditField input,
     .tourEditField textarea {
       display: block;
@@ -788,8 +717,7 @@
 
       margin-top: 7px;
 
-      border:
-        1px solid #b9d6db;
+      border: 1px solid #b9d6db;
 
       border-radius: 13px;
 
@@ -804,13 +732,11 @@
       outline: none;
     }
 
-
     .tourEditField input {
       height: 50px;
 
       padding: 0 13px;
     }
-
 
     .tourEditField textarea {
       min-height: 130px;
@@ -822,16 +748,13 @@
       line-height: 1.45;
     }
 
-
     .tourEditField input:focus,
     .tourEditField textarea:focus {
       border-color: #56a8b3;
 
       box-shadow:
-        0 0 0 3px
-        rgba(86, 168, 179, .14);
+        0 0 0 3px rgba(86, 168, 179, .14);
     }
-
 
     .tourEditCounter {
       margin-top: 5px;
@@ -842,7 +765,6 @@
 
       text-align: right;
     }
-
 
     .tourEditActions {
       display: grid;
@@ -856,7 +778,6 @@
       margin-top: 20px;
     }
 
-
     .tourEditActions button {
       min-height: 50px;
 
@@ -866,16 +787,13 @@
       font-weight: 850;
     }
 
-
     .tourEditCancel {
-      border:
-        1px solid #c8dde1;
+      border: 1px solid #c8dde1;
 
       background: #ffffff;
 
       color: #496974;
     }
-
 
     .tourEditSave {
       border: 0;
@@ -890,9 +808,7 @@
        SMARTPHONE
        ===================================================== */
 
-    @media (
-      max-width: 420px
-    ) {
+    @media (max-width: 420px) {
 
       .tourListCard {
         grid-template-columns:
@@ -905,7 +821,6 @@
         padding: 16px 12px;
       }
 
-
       .tourKayakIcon {
         width: 60px;
         height: 60px;
@@ -913,41 +828,33 @@
         border-radius: 16px;
       }
 
-
       .tourKayakIcon img {
         border-radius: 16px;
       }
-
 
       .tourListTitle {
         font-size: 18px;
       }
 
-
       .tourListDate {
         font-size: 13px;
       }
-
 
       .tourListDistance {
         font-size: 15px;
       }
 
-
       .tourChevron {
         font-size: 28px;
       }
-
 
       .tourStatValue {
         font-size: 22px;
       }
 
-
       .tourActionCard {
         grid-template-columns: 1fr;
       }
-
 
       .tourDeleteBtn {
         grid-column: auto;
@@ -967,7 +874,6 @@
      ========================================================= */
 
   const calendarSvg = `
-
     <svg viewBox="0 0 24 24">
 
       <rect
@@ -976,22 +882,14 @@
         width="18"
         height="16"
         rx="2"
-
         fill="none"
-
         stroke="currentColor"
         stroke-width="2"
       />
 
       <path
-        d="
-          M7 3v4
-          M17 3v4
-          M3 10h18
-        "
-
+        d="M7 3v4M17 3v4M3 10h18"
         fill="none"
-
         stroke="currentColor"
         stroke-width="2"
         stroke-linecap="round"
@@ -1002,7 +900,6 @@
 
 
   const rulerSvg = `
-
     <svg viewBox="0 0 24 24">
 
       <rect
@@ -1011,23 +908,14 @@
         width="18"
         height="10"
         rx="2"
-
         fill="none"
-
         stroke="currentColor"
         stroke-width="2"
       />
 
       <path
-        d="
-          M7 7v5
-          M10 7v3
-          M13 7v5
-          M16 7v3
-        "
-
+        d="M7 7v5M10 7v3M13 7v5M16 7v3"
         fill="none"
-
         stroke="currentColor"
         stroke-width="1.8"
       />
@@ -1037,7 +925,6 @@
 
 
   const pinSvg = `
-
     <svg viewBox="0 0 24 24">
 
       <path
@@ -1047,9 +934,7 @@
           A7 7 0 0 1 19 9
           C19 14.7 12 21 12 21Z
         "
-
         fill="none"
-
         stroke="currentColor"
         stroke-width="2"
         stroke-linejoin="round"
@@ -1059,9 +944,7 @@
         cx="12"
         cy="9"
         r="2.5"
-
         fill="none"
-
         stroke="currentColor"
         stroke-width="2"
       />
@@ -1071,24 +954,17 @@
 
 
   const noteSvg = `
-
     <svg viewBox="0 0 24 24">
 
       <path
         d="
-          M5 5
-          H19
-          M5 10
-          H19
-          M5 15
-          H15
+          M5 5H19
+          M5 10H19
+          M5 15H15
         "
-
         fill="none"
-
         stroke="currentColor"
         stroke-width="2"
-
         stroke-linecap="round"
       />
 
@@ -1097,12 +973,10 @@
 
 
   /* =========================================================
-     HILFSFUNKTIONEN
+     DATUM / FORMATIERUNG
      ========================================================= */
 
-  function getTripStart(
-    trip
-  ) {
+  function getTripStart(trip) {
 
     return (
       trip.startedAt ||
@@ -1114,14 +988,10 @@
   }
 
 
-  function dateValue(
-    trip
-  ) {
+  function dateValue(trip) {
 
     const value =
-      getTripStart(
-        trip
-      );
+      getTripStart(trip);
 
 
     if (!value) {
@@ -1130,9 +1000,7 @@
 
 
     const date =
-      new Date(
-        value
-      );
+      new Date(value);
 
 
     if (
@@ -1148,14 +1016,10 @@
   }
 
 
-  function formatDateLong(
-    value
-  ) {
+  function formatDateLong(value) {
 
     const date =
-      new Date(
-        value
-      );
+      new Date(value);
 
 
     if (
@@ -1163,33 +1027,25 @@
         date.getTime()
       )
     ) {
-
-      return (
-        'Datum unbekannt'
-      );
+      return 'Datum unbekannt';
     }
 
 
-    return date
-      .toLocaleDateString(
-        'de-DE',
-        {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric'
-        }
-      );
+    return date.toLocaleDateString(
+      'de-DE',
+      {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      }
+    );
   }
 
 
-  function formatDateShort(
-    value
-  ) {
+  function formatDateShort(value) {
 
     const date =
-      new Date(
-        value
-      );
+      new Date(value);
 
 
     if (
@@ -1201,26 +1057,21 @@
     }
 
 
-    return date
-      .toLocaleDateString(
-        'de-DE',
-        {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric'
-        }
-      );
+    return date.toLocaleDateString(
+      'de-DE',
+      {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      }
+    );
   }
 
 
-  function formatClock(
-    value
-  ) {
+  function formatClock(value) {
 
     const date =
-      new Date(
-        value
-      );
+      new Date(value);
 
 
     if (
@@ -1232,20 +1083,17 @@
     }
 
 
-    return date
-      .toLocaleTimeString(
-        'de-DE',
-        {
-          hour: '2-digit',
-          minute: '2-digit'
-        }
-      );
+    return date.toLocaleTimeString(
+      'de-DE',
+      {
+        hour: '2-digit',
+        minute: '2-digit'
+      }
+    );
   }
 
 
-  function formatDuration(
-    seconds
-  ) {
+  function formatDuration(seconds) {
 
     const total =
       Math.max(
@@ -1264,9 +1112,7 @@
 
     const minutes =
       Math.floor(
-        (
-          total % 3600
-        ) / 60
+        (total % 3600) / 60
       );
 
 
@@ -1275,112 +1121,54 @@
 
 
     return (
-
-      String(
-        hours
-      ).padStart(
-        2,
-        '0'
-      )
-
+      String(hours).padStart(2, '0')
       +
-
       ':'
-
       +
-
-      String(
-        minutes
-      ).padStart(
-        2,
-        '0'
-      )
-
+      String(minutes).padStart(2, '0')
       +
-
       ':'
-
       +
-
-      String(
-        secs
-      ).padStart(
-        2,
-        '0'
-      )
+      String(secs).padStart(2, '0')
     );
   }
 
 
-  function formatKm(
-    meters
-  ) {
+  function formatKm(meters) {
 
     return (
-
       (
         Math.max(
           0,
           Number(meters) || 0
-        )
-
-        /
-
-        1000
+        ) / 1000
       )
-
-      .toFixed(
-        2
-      )
-
-      .replace(
-        '.',
-        ','
-      )
-
+      .toFixed(2)
+      .replace('.', ',')
       +
-
       ' km'
     );
   }
 
 
-  function formatKmh(
-    ms
-  ) {
+  function formatKmh(ms) {
 
     return (
-
       (
         Math.max(
           0,
           Number(ms) || 0
-        )
-
-        *
-
-        3.6
+        ) * 3.6
       )
-
-      .toFixed(
-        1
-      )
-
-      .replace(
-        '.',
-        ','
-      )
-
+      .toFixed(1)
+      .replace('.', ',')
       +
-
       ' km/h'
     );
   }
 
 
-  function tripAverage(
-    trip
-  ) {
+  function tripAverage(trip) {
 
     if (
       Number.isFinite(
@@ -1389,7 +1177,6 @@
         )
       )
     ) {
-
       return Number(
         trip.averageSpeed
       );
@@ -1402,49 +1189,33 @@
       ) || 0;
 
 
-    if (
-      duration <= 0
-    ) {
+    if (duration <= 0) {
       return 0;
     }
 
 
     return (
-
-      (
-        Number(
-          trip.distance
-        ) || 0
-      )
-
-      /
-
-      duration
-    );
+      Number(
+        trip.distance
+      ) || 0
+    ) / duration;
   }
 
 
   /* =========================================================
-     EINHEITLICHER TOURNAME
+     TOURNAME
      ========================================================= */
 
-  function tripTitle(
-    trip
-  ) {
+  function tripTitle(trip) {
 
     const formatted =
       formatDateShort(
-        getTripStart(
-          trip
-        )
+        getTripStart(trip)
       );
 
 
     return formatted
-      ? (
-          'Tour ' +
-          formatted
-        )
+      ? 'Tour ' + formatted
       : 'Tour';
   }
 
@@ -1453,33 +1224,24 @@
      ORT
      ========================================================= */
 
-  function tripLocation(
-    trip
-  ) {
+  function tripLocation(trip) {
 
-    const own =
+    const value =
       String(
         trip.locationName ||
         ''
       ).trim();
 
 
-    if (own) {
-      return own;
+    if (
+      value &&
+      value !== 'Unbekannter Ort'
+    ) {
+      return value;
     }
 
 
-    /*
-      Alte und GPX-importierte Fahrten
-      bleiben gültig.
-
-      Automatische Ortsermittlung bauen
-      wir später in die Aufzeichnung ein.
-    */
-
-    return (
-      'Unbekannter Ort'
-    );
+    return 'Unbekannter Ort';
   }
 
 
@@ -1487,9 +1249,7 @@
      BEMERKUNG
      ========================================================= */
 
-  function tripNote(
-    trip
-  ) {
+  function tripNote(trip) {
 
     return String(
       trip.note ||
@@ -1502,15 +1262,11 @@
      ENDE DER TOUR
      ========================================================= */
 
-  function tripEndTime(
-    trip
-  ) {
+  function tripEndTime(trip) {
 
     const start =
       new Date(
-        getTripStart(
-          trip
-        )
+        getTripStart(trip)
       );
 
 
@@ -1519,7 +1275,6 @@
         start.getTime()
       )
     ) {
-
       return null;
     }
 
@@ -1534,11 +1289,8 @@
 
 
     return new Date(
-
       start.getTime()
-
       +
-
       duration * 1000
     );
   }
@@ -1548,13 +1300,9 @@
      HTML ESCAPEN
      ========================================================= */
 
-  function escapeHtml(
-    value
-  ) {
+  function escapeHtml(value) {
 
-    return String(
-      value
-    )
+    return String(value)
 
       .replace(
         /&/g,
@@ -1584,9 +1332,386 @@
 
 
   /* =========================================================
-     FAHRT SICHER AKTUALISIEREN
+     ORTS-CACHE
+     ========================================================= */
 
-     Ändert NUR:
+  function loadLocationCache() {
+
+    try {
+
+      const data =
+        JSON.parse(
+          localStorage.getItem(
+            LOCATION_CACHE_KEY
+          ) || '{}'
+        );
+
+
+      if (
+        data &&
+        typeof data === 'object'
+      ) {
+        return data;
+      }
+
+
+      return {};
+
+    } catch (error) {
+
+      console.error(
+        'Ortscache konnte nicht gelesen werden:',
+        error
+      );
+
+      return {};
+    }
+  }
+
+
+  function saveLocationCache(cache) {
+
+    try {
+
+      localStorage.setItem(
+        LOCATION_CACHE_KEY,
+        JSON.stringify(cache)
+      );
+
+    } catch (error) {
+
+      console.error(
+        'Ortscache konnte nicht gespeichert werden:',
+        error
+      );
+    }
+  }
+
+
+  /* =========================================================
+     ERSTEN GÜLTIGEN GPS-PUNKT FINDEN
+     ========================================================= */
+
+  function firstTrackPoint(trip) {
+
+    if (
+      !trip ||
+      !Array.isArray(
+        trip.track
+      )
+    ) {
+      return null;
+    }
+
+
+    return (
+      trip.track.find(
+        function (point) {
+
+          return (
+            Number.isFinite(
+              Number(
+                point.lat
+              )
+            )
+            &&
+            Number.isFinite(
+              Number(
+                point.lon
+              )
+            )
+          );
+        }
+      )
+      ||
+      null
+    );
+  }
+
+
+  function locationCacheKey(
+    lat,
+    lon
+  ) {
+
+    return (
+      Number(lat).toFixed(4)
+      +
+      ','
+      +
+      Number(lon).toFixed(4)
+    );
+  }
+
+
+  /* =========================================================
+     NOMINATIM-ANTWORT AUSWERTEN
+     ========================================================= */
+
+  function locationNameFromNominatim(data) {
+
+    const address =
+      data &&
+      data.address
+        ? data.address
+        : {};
+
+
+    return (
+      address.village
+      ||
+      address.town
+      ||
+      address.city
+      ||
+      address.hamlet
+      ||
+      address.municipality
+      ||
+      address.suburb
+      ||
+      address.city_district
+      ||
+      address.county
+      ||
+      ''
+    );
+  }
+
+
+  /* =========================================================
+     STARTPUNKT -> ORTSNAME
+     ========================================================= */
+
+  async function reverseGeocodeTrip(trip) {
+
+    /*
+      Bereits gespeicherten Ort
+      niemals automatisch überschreiben.
+    */
+
+    const existing =
+      String(
+        trip.locationName ||
+        ''
+      ).trim();
+
+
+    if (
+      existing &&
+      existing !== 'Unbekannter Ort'
+    ) {
+      return existing;
+    }
+
+
+    const point =
+      firstTrackPoint(trip);
+
+
+    if (!point) {
+      return 'Unbekannter Ort';
+    }
+
+
+    if (
+      typeof navigator !== 'undefined'
+      &&
+      navigator.onLine === false
+    ) {
+      return 'Unbekannter Ort';
+    }
+
+
+    const lat =
+      Number(
+        point.lat
+      );
+
+
+    const lon =
+      Number(
+        point.lon
+      );
+
+
+    const cacheKey =
+      locationCacheKey(
+        lat,
+        lon
+      );
+
+
+    const cache =
+      loadLocationCache();
+
+
+    if (
+      cache[cacheKey]
+    ) {
+      return cache[cacheKey];
+    }
+
+
+    /*
+      Falls für dieselben Koordinaten bereits
+      eine Abfrage läuft, diese verwenden.
+    */
+
+    if (
+      locationRequests.has(
+        cacheKey
+      )
+    ) {
+      return locationRequests.get(
+        cacheKey
+      );
+    }
+
+
+    const request =
+      (async function () {
+
+        try {
+
+          let baseUrl =
+            'https://nominatim.openstreetmap.org/reverse';
+
+
+          /*
+            Falls die App bereits eine eigene
+            Nominatim-Adresse definiert hat,
+            diese möglichst übernehmen.
+          */
+
+          if (
+            typeof NOMINATIM_URL !== 'undefined'
+            &&
+            NOMINATIM_URL
+          ) {
+
+            baseUrl =
+              String(
+                NOMINATIM_URL
+              )
+              .replace(
+                /\/search\/?$/,
+                '/reverse'
+              );
+          }
+
+
+          const params =
+            new URLSearchParams(
+              {
+                format:
+                  'jsonv2',
+
+                lat:
+                  String(lat),
+
+                lon:
+                  String(lon),
+
+                zoom:
+                  '10',
+
+                addressdetails:
+                  '1',
+
+                'accept-language':
+                  'de'
+              }
+            );
+
+
+          const response =
+            await fetch(
+              baseUrl
+              +
+              '?'
+              +
+              params.toString(),
+              {
+                headers: {
+                  Accept:
+                    'application/json'
+                }
+              }
+            );
+
+
+          if (!response.ok) {
+
+            throw new Error(
+              'Nominatim HTTP '
+              +
+              response.status
+            );
+          }
+
+
+          const data =
+            await response.json();
+
+
+          const name =
+            String(
+              locationNameFromNominatim(
+                data
+              )
+            ).trim();
+
+
+          if (!name) {
+            return 'Unbekannter Ort';
+          }
+
+
+          cache[cacheKey] =
+            name;
+
+
+          saveLocationCache(
+            cache
+          );
+
+
+          return name;
+
+        } catch (error) {
+
+          console.error(
+            'Ort konnte nicht automatisch ermittelt werden:',
+            error
+          );
+
+
+          return 'Unbekannter Ort';
+
+        } finally {
+
+          locationRequests.delete(
+            cacheKey
+          );
+        }
+      })();
+
+
+    locationRequests.set(
+      cacheKey,
+      request
+    );
+
+
+    return request;
+  }
+
+
+  /* =========================================================
+     FAHRT-METADATEN SPEICHERN
+
+     Ändert ausschließlich:
      - locationName
      - note
      ========================================================= */
@@ -1621,11 +1746,8 @@
 
 
     if (
-      !Array.isArray(
-        trips
-      )
+      !Array.isArray(trips)
     ) {
-
       return false;
     }
 
@@ -1638,38 +1760,23 @@
             String(
               trip.id
             )
-
             ===
-
-            String(
-              id
-            )
+            String(id)
           );
         }
       );
 
 
-    if (
-      index < 0
-    ) {
-
+    if (index < 0) {
       return false;
     }
 
 
     /*
-      WICHTIG:
+      Bestehende Daten vollständig übernehmen.
 
-      Alle bestehenden Felder bleiben erhalten.
-
-      Insbesondere:
-      track
-      distance
-      duration
-      maxSpeed
-      averageSpeed
-      startedAt
-      date
+      Track, Distanz, Dauer, Zeitstempel usw.
+      bleiben unverändert.
     */
 
     trips[index] = {
@@ -1702,12 +1809,8 @@
     try {
 
       localStorage.setItem(
-
         STORAGE_KEY,
-
-        JSON.stringify(
-          trips
-        )
+        JSON.stringify(trips)
       );
 
 
@@ -1727,28 +1830,110 @@
 
 
   /* =========================================================
+     FEHLENDEN ORT AUTOMATISCH ERGÄNZEN
+     ========================================================= */
+
+  async function fillTripLocationIfMissing(trip) {
+
+    if (!trip) {
+      return;
+    }
+
+
+    const existing =
+      String(
+        trip.locationName ||
+        ''
+      ).trim();
+
+
+    if (
+      existing &&
+      existing !== 'Unbekannter Ort'
+    ) {
+      return;
+    }
+
+
+    const name =
+      await reverseGeocodeTrip(
+        trip
+      );
+
+
+    if (
+      !name ||
+      name === 'Unbekannter Ort'
+    ) {
+      return;
+    }
+
+
+    const saved =
+      updateTripMetadata(
+        trip.id,
+        name,
+        tripNote(trip)
+      );
+
+
+    if (!saved) {
+      return;
+    }
+
+
+    /*
+      Liste aktualisieren.
+    */
+
+    modernRenderTrips();
+
+
+    /*
+      Detailansicht sofort aktualisieren,
+      falls dieselbe Tour noch geöffnet ist.
+    */
+
+    if (
+      detailRoot &&
+      !detailRoot.hidden &&
+      String(currentDetailId)
+      ===
+      String(trip.id)
+    ) {
+
+      const element =
+        detailRoot.querySelector(
+          '[data-field="location"]'
+        );
+
+
+      if (element) {
+        element.textContent =
+          name;
+      }
+    }
+  }
+
+
+  /* =========================================================
      DETAILANSICHT
      ========================================================= */
 
   let detailRoot =
     null;
 
-
   let detailMap =
     null;
-
 
   let detailTrackLayer =
     null;
 
-
   let detailStartMarker =
     null;
 
-
   let detailEndMarker =
     null;
-
 
   let currentDetailId =
     null;
@@ -1761,14 +1946,11 @@
   let editOverlay =
     null;
 
-
   let editLocationInput =
     null;
 
-
   let editNoteInput =
     null;
-
 
   let editCounter =
     null;
@@ -1776,9 +1958,7 @@
 
   function ensureEditDialog() {
 
-    if (
-      editOverlay
-    ) {
+    if (editOverlay) {
       return;
     }
 
@@ -1862,7 +2042,9 @@
             type="button"
             class="tourEditCancel"
           >
+
             Abbrechen
+
           </button>
 
 
@@ -1870,7 +2052,9 @@
             type="button"
             class="tourEditSave"
           >
+
             Speichern
+
           </button>
 
         </div>
@@ -1902,27 +2086,22 @@
       );
 
 
-    editNoteInput
-      .addEventListener(
-        'input',
-        function () {
+    editNoteInput.addEventListener(
+      'input',
+      function () {
 
-          editCounter.textContent =
-
-            editNoteInput.value.length
-
-            +
-
-            ' / 1000';
-        }
-      );
+        editCounter.textContent =
+          editNoteInput.value.length
+          +
+          ' / 1000';
+      }
+    );
 
 
     editOverlay
       .querySelector(
         '.tourEditCancel'
       )
-
       .addEventListener(
         'click',
         closeEditDialog
@@ -1933,48 +2112,41 @@
       .querySelector(
         '.tourEditSave'
       )
-
       .addEventListener(
         'click',
         saveEditDialog
       );
 
 
-    editOverlay
-      .addEventListener(
-        'click',
-        function (event) {
+    editOverlay.addEventListener(
+      'click',
+      function (event) {
 
-          if (
-            event.target ===
-            editOverlay
-          ) {
-
-            closeEditDialog();
-          }
+        if (
+          event.target ===
+          editOverlay
+        ) {
+          closeEditDialog();
         }
-      );
+      }
+    );
   }
 
 
-  function openEditDialog(
-    id
-  ) {
+  /* =========================================================
+     BEARBEITEN ÖFFNEN
+     ========================================================= */
+
+  function openEditDialog(id) {
 
     const trip =
       getTrips().find(
         function (item) {
 
           return (
-            String(
-              item.id
-            )
-
+            String(item.id)
             ===
-
-            String(
-              id
-            )
+            String(id)
           );
         }
       );
@@ -1999,33 +2171,34 @@
       );
 
 
+    /*
+      Vorhandenen Ort zuerst anzeigen.
+    */
+
+    const existingLocation =
+      String(
+        trip.locationName ||
+        ''
+      ).trim();
+
+
     editLocationInput.value =
-
-      trip.locationName
-
-        ?
-
-        String(
-          trip.locationName
-        )
-
-        :
-
-        '';
+      (
+        existingLocation &&
+        existingLocation !==
+          'Unbekannter Ort'
+      )
+        ? existingLocation
+        : '';
 
 
     editNoteInput.value =
-      tripNote(
-        trip
-      );
+      tripNote(trip);
 
 
     editCounter.textContent =
-
       editNoteInput.value.length
-
       +
-
       ' / 1000';
 
 
@@ -2033,10 +2206,60 @@
       false;
 
 
+    /*
+      Fehlt der Ort, automatisch anhand
+      des Startpunkts bestimmen.
+    */
+
+    if (
+      !existingLocation ||
+      existingLocation ===
+        'Unbekannter Ort'
+    ) {
+
+      editLocationInput.value =
+        'Ort wird ermittelt …';
+
+
+      reverseGeocodeTrip(
+        trip
+      )
+      .then(
+        function (name) {
+
+          if (
+            !editOverlay ||
+            editOverlay.hidden
+          ) {
+            return;
+          }
+
+
+          if (
+            String(currentDetailId)
+            !==
+            String(trip.id)
+          ) {
+            return;
+          }
+
+
+          editLocationInput.value =
+            name ===
+              'Unbekannter Ort'
+              ? ''
+              : name;
+        }
+      );
+    }
+
+
     setTimeout(
       function () {
 
         editLocationInput.focus();
+
+        editLocationInput.select();
 
       },
       100
@@ -2056,11 +2279,13 @@
   }
 
 
+  /* =========================================================
+     BEARBEITUNG SPEICHERN
+     ========================================================= */
+
   function saveEditDialog() {
 
-    if (
-      !currentDetailId
-    ) {
+    if (!currentDetailId) {
       return;
     }
 
@@ -2068,6 +2293,18 @@
     let locationName =
       editLocationInput.value
         .trim();
+
+
+    /*
+      Statusmeldung niemals als Ort speichern.
+    */
+
+    if (
+      locationName ===
+      'Ort wird ermittelt …'
+    ) {
+      locationName = '';
+    }
 
 
     const note =
@@ -2079,7 +2316,6 @@
 
 
     if (!locationName) {
-
       locationName =
         'Unbekannter Ort';
     }
@@ -2087,11 +2323,8 @@
 
     const saved =
       updateTripMetadata(
-
         currentDetailId,
-
         locationName,
-
         note
       );
 
@@ -2113,8 +2346,8 @@
 
 
     /*
-      Detailansicht mit aktualisierten
-      Daten neu aufbauen.
+      Detailansicht mit den neuen
+      Daten aktualisieren.
     */
 
     if (
@@ -2130,14 +2363,12 @@
 
 
   /* =========================================================
-     DETAIL-DOM
+     DETAIL-DOM ERZEUGEN
      ========================================================= */
 
   function ensureDetail() {
 
-    if (
-      detailRoot
-    ) {
+    if (detailRoot) {
       return;
     }
 
@@ -2165,9 +2396,7 @@
           class="tourBackBtn"
           aria-label="Zurück"
         >
-
           ‹
-
         </button>
 
 
@@ -2278,7 +2507,7 @@
         </div>
 
 
-        <!-- Datum -->
+        <!-- DATUM -->
 
         <div class="tourInfoCard">
 
@@ -2299,6 +2528,7 @@
 
               </div>
 
+
               <div
                 class="tourInfoValue"
                 data-field="date"
@@ -2307,6 +2537,7 @@
                 Datum
 
               </div>
+
 
               <div
                 class="tourInfoSub"
@@ -2324,7 +2555,7 @@
         </div>
 
 
-        <!-- Ort -->
+        <!-- ORT -->
 
         <div class="tourInfoCard">
 
@@ -2345,6 +2576,7 @@
 
               </div>
 
+
               <div
                 class="tourInfoValue"
                 data-field="location"
@@ -2361,7 +2593,7 @@
         </div>
 
 
-        <!-- Bemerkung -->
+        <!-- BEMERKUNG -->
 
         <div class="tourNoteCard">
 
@@ -2372,6 +2604,7 @@
               ${noteSvg}
 
             </span>
+
 
             <span>
 
@@ -2390,7 +2623,7 @@
         </div>
 
 
-        <!-- Aktionen -->
+        <!-- AKTIONEN -->
 
         <div class="tourActionCard">
 
@@ -2443,7 +2676,6 @@
       .querySelector(
         '.tourBackBtn'
       )
-
       .addEventListener(
         'click',
         closeDetail
@@ -2456,14 +2688,11 @@
       .querySelector(
         '.tourEditBtn'
       )
-
       .addEventListener(
         'click',
         function () {
 
-          if (
-            currentDetailId
-          ) {
+          if (currentDetailId) {
 
             openEditDialog(
               currentDetailId
@@ -2473,20 +2702,17 @@
       );
 
 
-    /* GPX */
+    /* GPX Export */
 
     detailRoot
       .querySelector(
         '.tourExportBtn'
       )
-
       .addEventListener(
         'click',
         function () {
 
-          if (
-            !currentDetailId
-          ) {
+          if (!currentDetailId) {
             return;
           }
 
@@ -2516,14 +2742,11 @@
       .querySelector(
         '.tourDeleteBtn'
       )
-
       .addEventListener(
         'click',
         function () {
 
-          if (
-            !currentDetailId
-          ) {
+          if (!currentDetailId) {
             return;
           }
 
@@ -2565,24 +2788,16 @@
      TOUR ÖFFNEN
      ========================================================= */
 
-  function openDetail(
-    id
-  ) {
+  function openDetail(id) {
 
     const trip =
       getTrips().find(
         function (item) {
 
           return (
-            String(
-              item.id
-            )
-
+            String(item.id)
             ===
-
-            String(
-              id
-            )
+            String(id)
           );
         }
       );
@@ -2602,9 +2817,7 @@
       !Array.isArray(
         trip.track
       )
-
       ||
-
       trip.track.length < 2
     ) {
 
@@ -2625,6 +2838,16 @@
       );
 
 
+    /*
+      Fehlenden Ort im Hintergrund
+      automatisch bestimmen.
+    */
+
+    fillTripLocationIfMissing(
+      trip
+    );
+
+
     /* Titel */
 
     detailRoot
@@ -2632,9 +2855,7 @@
         '.tourDetailTitle'
       )
       .textContent =
-        tripTitle(
-          trip
-        );
+        tripTitle(trip);
 
 
     /* Statistik */
@@ -2665,9 +2886,7 @@
       )
       .textContent =
         formatKmh(
-          tripAverage(
-            trip
-          )
+          tripAverage(trip)
         );
 
 
@@ -2684,15 +2903,11 @@
     /* Datum */
 
     const start =
-      getTripStart(
-        trip
-      );
+      getTripStart(trip);
 
 
     const end =
-      tripEndTime(
-        trip
-      );
+      tripEndTime(trip);
 
 
     detailRoot
@@ -2710,48 +2925,40 @@
         '[data-field="time"]'
       )
       .textContent =
-
-        formatClock(
-          start
-        )
-
+        formatClock(start)
         +
-
         ' – '
-
         +
-
         (
           end
-            ? formatClock(
-                end
-              )
+            ? formatClock(end)
             : '--:--'
         )
-
         +
-
         ' Uhr';
 
 
     /* Ort */
+
+    const currentLocation =
+      tripLocation(trip);
+
 
     detailRoot
       .querySelector(
         '[data-field="location"]'
       )
       .textContent =
-        tripLocation(
-          trip
-        );
+        currentLocation ===
+          'Unbekannter Ort'
+          ? 'Ort wird ermittelt …'
+          : currentLocation;
 
 
     /* Bemerkung */
 
     const note =
-      tripNote(
-        trip
-      );
+      tripNote(trip);
 
 
     const noteElement =
@@ -2807,9 +3014,7 @@
      KARTE ZEICHNEN
      ========================================================= */
 
-  function drawDetailMap(
-    trip
-  ) {
+  function drawDetailMap(trip) {
 
     if (
       typeof L ===
@@ -2837,17 +3042,15 @@
 
 
       L.tileLayer(
-
         'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-
         {
           maxZoom: 19,
 
           attribution:
             '&copy; OpenStreetMap contributors'
         }
-
-      ).addTo(
+      )
+      .addTo(
         detailMap
       );
     }
@@ -2855,14 +3058,11 @@
 
     /* Alten Track entfernen */
 
-    if (
-      detailTrackLayer
-    ) {
+    if (detailTrackLayer) {
 
       detailMap.removeLayer(
         detailTrackLayer
       );
-
 
       detailTrackLayer =
         null;
@@ -2871,14 +3071,11 @@
 
     /* Startmarker entfernen */
 
-    if (
-      detailStartMarker
-    ) {
+    if (detailStartMarker) {
 
       detailMap.removeLayer(
         detailStartMarker
       );
-
 
       detailStartMarker =
         null;
@@ -2887,14 +3084,11 @@
 
     /* Endmarker entfernen */
 
-    if (
-      detailEndMarker
-    ) {
+    if (detailEndMarker) {
 
       detailMap.removeLayer(
         detailEndMarker
       );
-
 
       detailEndMarker =
         null;
@@ -2910,15 +3104,12 @@
           function (point) {
 
             return (
-
               Number.isFinite(
                 Number(
                   point.lat
                 )
               )
-
               &&
-
               Number.isFinite(
                 Number(
                   point.lon
@@ -2932,11 +3123,9 @@
           function (point) {
 
             return [
-
               Number(
                 point.lat
               ),
-
               Number(
                 point.lon
               )
@@ -2948,7 +3137,6 @@
     if (
       latLngs.length < 2
     ) {
-
       return;
     }
 
@@ -2986,9 +3174,11 @@
       L.circleMarker(
         latLngs[0],
         {
-          radius: 8,
+          radius:
+            8,
 
-          weight: 4,
+          weight:
+            4,
 
           color:
             '#ffffff',
@@ -3013,9 +3203,11 @@
           latLngs.length - 1
         ],
         {
-          radius: 8,
+          radius:
+            8,
 
-          weight: 4,
+          weight:
+            4,
 
           color:
             '#ffffff',
@@ -3033,16 +3225,15 @@
 
 
     detailMap.fitBounds(
-
       L.latLngBounds(
         latLngs
       ),
-
       {
-        padding: [
-          28,
-          28
-        ]
+        padding:
+          [
+            28,
+            28
+          ]
       }
     );
 
@@ -3064,9 +3255,7 @@
 
   function closeDetail() {
 
-    if (
-      !detailRoot
-    ) {
+    if (!detailRoot) {
       return;
     }
 
@@ -3091,34 +3280,22 @@
   function modernRenderTrips() {
 
     /*
-      Nur Kopie sortieren.
+      Nur eine Kopie sortieren.
 
-      Gespeicherte Reihenfolge/Daten
-      werden nicht verändert.
+      Die gespeicherte Reihenfolge und
+      GPS-Daten werden nicht verändert.
     */
 
     const trips =
       getTrips()
-
         .slice()
-
         .sort(
-          function (
-            a,
-            b
-          ) {
+          function (a, b) {
 
             return (
-
-              dateValue(
-                b
-              )
-
+              dateValue(b)
               -
-
-              dateValue(
-                a
-              )
+              dateValue(a)
             );
           }
         );
@@ -3130,10 +3307,7 @@
       );
 
 
-    if (
-      !container
-    ) {
-
+    if (!container) {
       return;
     }
 
@@ -3143,9 +3317,7 @@
 
     /* Keine Fahrten */
 
-    if (
-      !trips.length
-    ) {
+    if (!trips.length) {
 
       const empty =
         document.createElement(
@@ -3173,32 +3345,22 @@
     /* Karten */
 
     trips.forEach(
-      function (
-        trip
-      ) {
+      function (trip) {
 
         const start =
-          getTripStart(
-            trip
-          );
+          getTripStart(trip);
 
 
         const end =
-          tripEndTime(
-            trip
-          );
+          tripEndTime(trip);
 
 
         const location =
-          tripLocation(
-            trip
-          );
+          tripLocation(trip);
 
 
         const note =
-          tripNote(
-            trip
-          );
+          tripNote(trip);
 
 
         const card =
@@ -3223,7 +3385,7 @@
 
         card.innerHTML = `
 
-          <!-- Bild -->
+          <!-- KAJAK-BILD -->
 
           <span class="tourKayakIcon">
 
@@ -3235,25 +3397,23 @@
           </span>
 
 
-          <!-- Text -->
+          <!-- INFORMATIONEN -->
 
           <span class="tourListMain">
 
 
-            <!-- Titel -->
+            <!-- TITEL -->
 
             <span class="tourListTitle">
 
               ${escapeHtml(
-                tripTitle(
-                  trip
-                )
+                tripTitle(trip)
               )}
 
             </span>
 
 
-            <!-- Datum -->
+            <!-- DATUM -->
 
             <span class="tourListDate">
 
@@ -3262,6 +3422,7 @@
                 ${calendarSvg}
 
               </span>
+
 
               <span>
 
@@ -3283,9 +3444,7 @@
 
                 ${escapeHtml(
                   end
-                    ? formatClock(
-                        end
-                      )
+                    ? formatClock(end)
                     : '--:--'
                 )}
 
@@ -3294,7 +3453,7 @@
             </span>
 
 
-            <!-- Entfernung -->
+            <!-- DISTANZ -->
 
             <span class="tourListDistance">
 
@@ -3303,6 +3462,7 @@
                 ${rulerSvg}
 
               </span>
+
 
               <span>
 
@@ -3317,7 +3477,7 @@
             </span>
 
 
-            <!-- Ort -->
+            <!-- ORT -->
 
             <span class="tourListLocation">
 
@@ -3326,6 +3486,7 @@
                 ${pinSvg}
 
               </span>
+
 
               <span>
 
@@ -3338,6 +3499,8 @@
             </span>
 
 
+            <!-- BEMERKUNG -->
+
             ${
               note.trim()
 
@@ -3345,13 +3508,13 @@
 
                 `
 
-                <span class="tourListNote">
+                  <span class="tourListNote">
 
-                  ${escapeHtml(
-                    note
-                  )}
+                    ${escapeHtml(
+                      note
+                    )}
 
-                </span>
+                  </span>
 
                 `
 
@@ -3364,7 +3527,7 @@
           </span>
 
 
-          <!-- Pfeil -->
+          <!-- PFEIL -->
 
           <span class="tourChevron">
 
