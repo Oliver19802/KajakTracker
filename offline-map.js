@@ -209,7 +209,9 @@
           container: this._container,
           style: OFFLINE_STYLE(`pmtiles://${archive.source.getKey()}`),
           center: [leafletMap.getCenter().lng, leafletMap.getCenter().lat],
-          /* MapLibre nutzt 512-Pixel-Kacheln, Leaflet 256 Pixel.\n             Eine Zoomstufe Unterschied hält beide Projektionen deckungsgleich. */\n          zoom: Math.max(0, leafletMap.getZoom() - 1),
+          /* MapLibre nutzt 512-Pixel-Kacheln, Leaflet 256 Pixel.
+             Eine Zoomstufe Unterschied hält beide Projektionen deckungsgleich. */
+          zoom: Math.max(0, leafletMap.getZoom() - 1),
           minZoom: 10,
           maxZoom: 15,
           attributionControl: false,
@@ -219,7 +221,12 @@
         this._sync = () => {
           const center = leafletMap.getCenter();
           this._mapLibre.resize();
-          this._mapLibre.jumpTo({\n            center: [center.lng, center.lat],\n            zoom: Math.max(0, leafletMap.getZoom() - 1),\n            bearing: 0,\n            pitch: 0\n          });
+          this._mapLibre.jumpTo({
+            center: [center.lng, center.lat],
+            zoom: Math.max(0, leafletMap.getZoom() - 1),
+            bearing: 0,
+            pitch: 0
+          });
         };
         leafletMap.on('move zoom resize', this._sync);
         this._mapLibre.on('load', this._sync);
