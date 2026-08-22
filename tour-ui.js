@@ -1,10 +1,10 @@
 /* =========================================================
    KAJAKTRACKER – MODERNE TOURENANSICHT
-   Version 3
+   Version 4
 
    - Neueste Tour zuerst
    - Einheitliche Namen: Tour TT.MM.JJJJ
-   - Kajak-Symbol
+   - Echtes Kajak-Bild
    - Moderne Tourenkarten
    - Detailansicht
    - GPX Export
@@ -31,8 +31,6 @@
 
   style.textContent = `
 
-    /* ---------- Tourenbereich ---------- */
-
     .tripsPanel {
       padding: 18px 14px 32px !important;
       background: #f7f9fa !important;
@@ -56,7 +54,6 @@
       display: grid;
       grid-template-columns: 68px 1fr 26px;
       align-items: center;
-
       gap: 14px;
 
       width: 100%;
@@ -75,7 +72,6 @@
       color: #183f55;
 
       text-align: left;
-
       cursor: pointer;
 
       transition:
@@ -91,32 +87,30 @@
     }
 
 
-    /* ---------- Kajak Symbol ---------- */
+    /* ---------- Kajak Bild ---------- */
 
     .tourKayakIcon {
-      display: grid;
+      display: block;
 
       width: 68px;
       height: 68px;
 
-      place-items: center;
+      overflow: hidden;
 
       border-radius: 18px;
 
-      background:
-        linear-gradient(
-          145deg,
-          #e9f6f7,
-          #dceff1
-        );
-
-      color: #08728b;
+      background: #e7f4f5;
     }
 
-    .tourKayakIcon svg {
-      width: 48px;
-      height: 48px;
+    .tourKayakIcon img {
       display: block;
+
+      width: 100%;
+      height: 100%;
+
+      object-fit: cover;
+
+      border-radius: 18px;
     }
 
 
@@ -556,9 +550,8 @@
         border-radius: 16px;
       }
 
-      .tourKayakIcon svg {
-        width: 43px;
-        height: 43px;
+      .tourKayakIcon img {
+        border-radius: 16px;
       }
 
       .tourListTitle {
@@ -588,109 +581,7 @@
 
 
   /* =========================================================
-     KAJAK ICON
-     ========================================================= */
-
-  const kayakSvg = `
-    <svg
-      viewBox="0 0 64 64"
-      aria-hidden="true"
-    >
-
-      <!-- Paddler Kopf -->
-      <circle
-        cx="30"
-        cy="20"
-        r="4.5"
-        fill="currentColor"
-      />
-
-      <!-- Körper -->
-      <path
-        d="
-          M30 25
-          C27 28 25 32 24 36
-          L34 37
-          C35 33 35 29 33 26
-          Z
-        "
-        fill="currentColor"
-      />
-
-      <!-- Arm -->
-      <path
-        d="
-          M30 27
-          L39 22
-        "
-        fill="none"
-        stroke="currentColor"
-        stroke-width="4"
-        stroke-linecap="round"
-      />
-
-      <!-- Paddel Stange -->
-      <path
-        d="
-          M17 45
-          L47 15
-        "
-        fill="none"
-        stroke="currentColor"
-        stroke-width="3.5"
-        stroke-linecap="round"
-      />
-
-      <!-- Paddel Blatt oben -->
-      <path
-        d="
-          M45 17
-          C47 12 51 10 54 11
-          C55 14 53 18 49 21
-          Z
-        "
-        fill="currentColor"
-      />
-
-      <!-- Paddel Blatt unten -->
-      <path
-        d="
-          M19 43
-          C16 47 12 49 9 48
-          C8 45 10 41 14 39
-          Z
-        "
-        fill="currentColor"
-      />
-
-      <!-- Kajak -->
-      <path
-        d="
-          M8 41
-          C18 44 26 45 34 44
-          C43 43 50 40 57 37
-          C54 44 47 49 37 51
-          C25 53 15 49 8 41
-          Z
-        "
-        fill="currentColor"
-      />
-
-      <!-- Aussparung / Cockpit -->
-      <ellipse
-        cx="31"
-        cy="43"
-        rx="7"
-        ry="2.4"
-        fill="#e5f3f4"
-      />
-
-    </svg>
-  `;
-
-
-  /* =========================================================
-     KLEINE ICONS
+     ICONS
      ========================================================= */
 
   const calendarSvg = `
@@ -743,6 +634,7 @@
      ========================================================= */
 
   function getTripStart(trip) {
+
     return (
       trip.startedAt ||
       trip.startTime ||
@@ -756,14 +648,21 @@
   function dateValue(trip) {
 
     const value =
-      getTripStart(trip);
+      getTripStart(
+        trip
+      );
+
 
     if (!value) {
       return 0;
     }
 
+
     const d =
-      new Date(value);
+      new Date(
+        value
+      );
+
 
     if (
       Number.isNaN(
@@ -772,6 +671,7 @@
     ) {
       return 0;
     }
+
 
     return d.getTime();
   }
@@ -780,7 +680,10 @@
   function formatDateLong(value) {
 
     const d =
-      new Date(value);
+      new Date(
+        value
+      );
+
 
     if (
       Number.isNaN(
@@ -789,6 +692,7 @@
     ) {
       return 'Datum unbekannt';
     }
+
 
     return d.toLocaleDateString(
       'de-DE',
@@ -804,7 +708,10 @@
   function formatDateShort(value) {
 
     const d =
-      new Date(value);
+      new Date(
+        value
+      );
+
 
     if (
       Number.isNaN(
@@ -813,6 +720,7 @@
     ) {
       return '';
     }
+
 
     return d.toLocaleDateString(
       'de-DE',
@@ -828,7 +736,10 @@
   function formatClock(value) {
 
     const d =
-      new Date(value);
+      new Date(
+        value
+      );
+
 
     if (
       Number.isNaN(
@@ -837,6 +748,7 @@
     ) {
       return '--:--';
     }
+
 
     return d.toLocaleTimeString(
       'de-DE',
@@ -858,18 +770,22 @@
         )
       );
 
+
     const hours =
       Math.floor(
         total / 3600
       );
+
 
     const minutes =
       Math.floor(
         (total % 3600) / 60
       );
 
+
     const secs =
       total % 60;
+
 
     return (
       String(hours).padStart(2, '0') +
@@ -927,14 +843,17 @@
       );
     }
 
+
     const duration =
       Number(
         trip.duration
       ) || 0;
 
+
     if (duration <= 0) {
       return 0;
     }
+
 
     return (
       Number(
@@ -951,14 +870,21 @@
   function tripTitle(trip) {
 
     const start =
-      getTripStart(trip);
+      getTripStart(
+        trip
+      );
+
 
     const formatted =
-      formatDateShort(start);
+      formatDateShort(
+        start
+      );
+
 
     if (!formatted) {
       return 'Tour';
     }
+
 
     return (
       'Tour ' +
@@ -968,15 +894,18 @@
 
 
   /* =========================================================
-     ENDE DER TOUR BERECHNEN
+     ENDE DER TOUR
      ========================================================= */
 
   function tripEndTime(trip) {
 
     const start =
       new Date(
-        getTripStart(trip)
+        getTripStart(
+          trip
+        )
       );
+
 
     if (
       Number.isNaN(
@@ -986,6 +915,7 @@
       return null;
     }
 
+
     const duration =
       Math.max(
         0,
@@ -993,6 +923,7 @@
           trip.duration
         ) || 0
       );
+
 
     return new Date(
       start.getTime() +
@@ -1036,17 +967,23 @@
      DETAILANSICHT
      ========================================================= */
 
-  let detailRoot = null;
+  let detailRoot =
+    null;
 
-  let detailMap = null;
+  let detailMap =
+    null;
 
-  let detailTrackLayer = null;
+  let detailTrackLayer =
+    null;
 
-  let detailStartMarker = null;
+  let detailStartMarker =
+    null;
 
-  let detailEndMarker = null;
+  let detailEndMarker =
+    null;
 
-  let currentDetailId = null;
+  let currentDetailId =
+    null;
 
 
   function ensureDetail() {
@@ -1055,13 +992,16 @@
       return;
     }
 
+
     detailRoot =
       document.createElement(
         'section'
       );
 
+
     detailRoot.className =
       'tourDetail';
+
 
     detailRoot.hidden =
       true;
@@ -1266,6 +1206,7 @@
             return;
           }
 
+
           if (
             typeof exportSavedTrip ===
             'function'
@@ -1297,6 +1238,7 @@
             return;
           }
 
+
           if (
             typeof deleteTrip !==
             'function'
@@ -1304,20 +1246,25 @@
             return;
           }
 
+
           const ok =
             confirm(
               'Möchtest du diese Tour wirklich löschen?'
             );
 
+
           if (!ok) {
             return;
           }
+
 
           deleteTrip(
             currentDetailId
           );
 
+
           closeDetail();
+
 
           modernRenderTrips();
         }
@@ -1378,7 +1325,9 @@
 
 
     const title =
-      tripTitle(trip);
+      tripTitle(
+        trip
+      );
 
 
     detailRoot
@@ -1472,7 +1421,9 @@
         ' – ' +
         (
           end
-            ? formatClock(end)
+            ? formatClock(
+                end
+              )
             : '--:--'
         ) +
         ' Uhr';
@@ -1619,8 +1570,6 @@
     }
 
 
-    /* Roter / orangefarbener Track */
-
     detailTrackLayer =
       L.polyline(
         latLngs,
@@ -1641,8 +1590,6 @@
       );
 
 
-    /* Startpunkt */
-
     detailStartMarker =
       L.circleMarker(
         latLngs[0],
@@ -1662,8 +1609,6 @@
         detailMap
       );
 
-
-    /* Endpunkt */
 
     detailEndMarker =
       L.circleMarker(
@@ -1741,12 +1686,6 @@
 
   function modernRenderTrips() {
 
-    /*
-       WICHTIG:
-       slice() erstellt nur eine Kopie.
-       Die gespeicherten Daten selbst werden NICHT verändert.
-    */
-
     const trips =
       getTrips()
         .slice()
@@ -1775,8 +1714,6 @@
     container.replaceChildren();
 
 
-    /* Keine Fahrten */
-
     if (!trips.length) {
 
       const empty =
@@ -1801,8 +1738,6 @@
       return;
     }
 
-
-    /* Touren erzeugen */
 
     trips.forEach(
       function (trip) {
@@ -1843,7 +1778,10 @@
 
           <span class="tourKayakIcon">
 
-            ${kayakSvg}
+            <img
+              src="kajak-tour-icon.png"
+              alt=""
+            >
 
           </span>
 
@@ -1960,7 +1898,7 @@
 
 
   /* =========================================================
-     BESTEHENDE FUNKTION ERSETZEN
+     BESTEHENDE FUNKTIONEN ERSETZEN
      ========================================================= */
 
   window.renderTrips =
