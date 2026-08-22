@@ -97,7 +97,7 @@ const MAX_VALID_SPEED = 50 / 3.6;
 let line = L.polyline(
   [],
   {
-    color: '#147aa1',
+    color: '##8e44ad',
     weight: 5
   }
 ).addTo(map);
