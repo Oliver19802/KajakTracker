@@ -24,8 +24,9 @@
   map.getPane('waterwayStatusPane').style.pointerEvents = 'auto';
 
   const layer = L.layerGroup().addTo(map);
-  let lastCenter = null;
+  let loadedBounds = null;
   let timer = null;
+  let retryTimer = null;
   let controller = null;
   let requestNumber = 0;
 
@@ -133,27 +134,31 @@
     throw lastError || new Error('Wasserwege konnten nicht geladen werden');
   }
 
-  async function loadWaterways() {
-    if (!navigator.onLine || map.getZoom() < MIN_ZOOM) {
+  async function loadWaterways(force = false) {
+    if (map.getZoom() < MIN_ZOOM) {
       layer.clearLayers();
+      loadedBounds = null;
       return;
     }
 
-    const center = map.getCenter();
-    if (lastCenter && lastCenter.distanceTo(center) < RELOAD_DISTANCE_METERS) return;
+    /* Bei einem kurzen Netzausfall bleiben bereits geladene Linien sichtbar. */
+    if (!navigator.onLine) return;
+
+    const visibleBounds = map.getBounds();
+    if (!force && loadedBounds && loadedBounds.contains(visibleBounds)) return;
 
     if (controller) controller.abort();
     controller = new AbortController();
     const currentRequest = ++requestNumber;
-    const bounds = map.getBounds().pad(0.25);
+    const requestBounds = visibleBounds.pad(0.45);
     const bbox = [
-      bounds.getSouth(),
-      bounds.getWest(),
-      bounds.getNorth(),
-      bounds.getEast()
+      requestBounds.getSouth(),
+      requestBounds.getWest(),
+      requestBounds.getNorth(),
+      requestBounds.getEast()
     ].join(',');
 
-    const query = `[out:json][timeout:25];
+    const query = `[out:json][timeout:35];
 way["waterway"~"^(river|canal|stream|ditch)$"](${bbox});
 out tags geom;`;
 
@@ -165,32 +170,38 @@ out tags geom;`;
       (data.elements || []).forEach(way => {
         if (!Array.isArray(way.geometry) || way.geometry.length < 2) return;
 
-        const navigable = isNavigable(way.tags || {});
-        const explicitlyBlocked = isBlocked(way.tags || {});
+        const tags = way.tags || {};
+        const navigable = isNavigable(tags);
+        const explicitlyBlocked = isBlocked(tags);
 
         /* Kleine, nicht ausdrücklich freigegebene Bäche und Gräben
            werden nicht pauschal als befahrbar markiert. */
         if (!navigable && !explicitlyBlocked) return;
 
         const latLngs = way.geometry.map(point => [point.lat, point.lon]);
-        const polyline = L.polyline(latLngs, lineStyle(way.tags || {}, navigable));
-        polyline.bindPopup(popupText(way.tags || {}, navigable));
+        const polyline = L.polyline(latLngs, lineStyle(tags, navigable));
+        polyline.bindPopup(popupText(tags, navigable));
         nextLayers.push(polyline);
       });
 
+      /* Erst nach einem vollständigen Abruf austauschen. So entsteht
+         beim Nachladen kein leerer oder nur teilweise geladener Zustand. */
       layer.clearLayers();
       nextLayers.forEach(item => item.addTo(layer));
-      lastCenter = center;
+      loadedBounds = requestBounds;
+      clearTimeout(retryTimer);
     } catch (error) {
       if (error.name !== 'AbortError') {
         console.error('Wasserweg-Markierung fehlgeschlagen:', error);
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => loadWaterways(true), 4000);
       }
     }
   }
 
   function scheduleLoad() {
     clearTimeout(timer);
-    timer = setTimeout(loadWaterways, 500);
+    timer = setTimeout(() => loadWaterways(false), 650);
   }
 
   const legend = L.control({ position: 'bottomleft' });
@@ -208,6 +219,6 @@ out tags geom;`;
   legend.addTo(map);
 
   map.on('moveend zoomend', scheduleLoad);
-  window.addEventListener('online', scheduleLoad);
+  window.addEventListener('online', () => loadWaterways(true));
   scheduleLoad();
 })();
