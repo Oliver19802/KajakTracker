@@ -74,7 +74,7 @@ let currentSpeed = 0;
 
 let marker = null;
 
-/* Marker einer ausgewählten, gespeicherten Fahrt. */
+/* Marker einer ausgewÃ¤hlten, gespeicherten Fahrt. */
 let tripMarkers = L.layerGroup().addTo(map);
 
 let selectedTripId = null;
@@ -83,12 +83,12 @@ const TRIPS_STORAGE_KEY = 'kajakTrips';
 
 const ACTIVE_TRIP_STORAGE_KEY = 'kajakActiveTrip';
 
-/* Kompatibilität mit der bereits begonnenen Kartenmodus-Erweiterung. */
+/* KompatibilitÃ¤t mit der bereits begonnenen Kartenmodus-Erweiterung. */
 const MAP_MODE_STORAGE_KEY = 'kajakMapMode';
 
 const MAP_OVERLAYS_STORAGE_KEY = 'kajakMapOverlays';
 
-/* 50 km/h in m/s: darüber liegende Werte sind GPS-Ausreißer. */
+/* 50 km/h in m/s: darÃ¼ber liegende Werte sind GPS-AusreiÃŸer. */
 const MAX_VALID_SPEED = 50 / 3.6;
 
 
@@ -97,7 +97,7 @@ const MAX_VALID_SPEED = 50 / 3.6;
 let line = L.polyline(
   [],
   {
-    color: '##8e44ad',
+    color: '#8e44ad',
     weight: 5
   }
 ).addTo(map);
@@ -147,12 +147,12 @@ const SPREEWALD_POI_BOUNDS = L.latLngBounds(
   [52.1044933, 14.5851240]
 );
 const POI_TYPES = {
-  lock: { label: 'Schleusen', icon: '🔒', layer: locksLayer, selectors: [['waterway', 'lock_gate'], ['waterway', 'lock'], ['lock', 'yes']] },
-  weir: { label: 'Wehre', icon: '⚠️', layer: weirsLayer, selectors: [['waterway', 'weir']] },
-  restaurant: { label: 'Gaststätten', icon: '🍽', layer: restaurantsLayer, selectors: [['amenity', 'restaurant|cafe|pub|biergarten|fast_food', true]], navigable: true },
-  toilets: { label: 'Toiletten', icon: '🚻', layer: toiletsLayer, selectors: [['amenity', 'toilets']], navigable: true },
-  camping: { label: 'Campingplätze', icon: '🏕', layer: campingLayer, selectors: [['tourism', 'camp_site|caravan_site', true]], navigable: true },
-  slipway: { label: 'Slipways / Anlegestellen', icon: '🛶', layer: slipwaysLayer, selectors: [['leisure', 'slipway'], ['canoe', 'put_in|launch', true], ['waterway', 'access_point']], navigable: true }
+  lock: { label: 'Schleusen', icon: 'ðŸ”’', layer: locksLayer, selectors: [['waterway', 'lock_gate'], ['waterway', 'lock'], ['lock', 'yes']] },
+  weir: { label: 'Wehre', icon: 'âš ï¸', layer: weirsLayer, selectors: [['waterway', 'weir']] },
+  restaurant: { label: 'GaststÃ¤tten', icon: 'ðŸ½', layer: restaurantsLayer, selectors: [['amenity', 'restaurant|cafe|pub|biergarten|fast_food', true]], navigable: true },
+  toilets: { label: 'Toiletten', icon: 'ðŸš»', layer: toiletsLayer, selectors: [['amenity', 'toilets']], navigable: true },
+  camping: { label: 'CampingplÃ¤tze', icon: 'ðŸ•', layer: campingLayer, selectors: [['tourism', 'camp_site|caravan_site', true]], navigable: true },
+  slipway: { label: 'Slipways / Anlegestellen', icon: 'ðŸ›¶', layer: slipwaysLayer, selectors: [['leisure', 'slipway'], ['canoe', 'put_in|launch', true], ['waterway', 'access_point']], navigable: true }
 };
 let poiEnabled = loadPoiState();
 let poiFeatures = [];
@@ -309,11 +309,11 @@ function addMapModeControl() {
 
     mapButton.type = 'button';
 
-    mapButton.textContent = '🗺 Karte';
+    mapButton.textContent = 'ðŸ—º Karte';
 
     mapButton.setAttribute(
       'aria-label',
-      'Straßenkarte anzeigen'
+      'StraÃŸenkarte anzeigen'
     );
 
 
@@ -324,7 +324,7 @@ function addMapModeControl() {
 
     seamarkButton.type = 'button';
 
-    seamarkButton.textContent = '⚓ Seekarte';
+    seamarkButton.textContent = 'âš“ Seekarte';
 
     seamarkButton.setAttribute(
       'aria-label',
@@ -411,7 +411,7 @@ function setToolButton(name, active) {
 
 function toggleSeamark() {
   if (!navigator.onLine && !map.hasLayer(seamark)) {
-    window.showMapMessage('OpenSeaMap benötigt eine Internetverbindung.', true);
+    window.showMapMessage('OpenSeaMap benÃ¶tigt eine Internetverbindung.', true);
     return;
   }
   if (map.hasLayer(seamark)) map.removeLayer(seamark);
@@ -487,14 +487,14 @@ function routeDistanceMeters(coordinates) {
 
 async function startWaterNavigation() {
   if (!navigator.onLine) {
-    setNavigationMessage('Navigation benötigt eine Internetverbindung.', true);
+    setNavigationMessage('Navigation benÃ¶tigt eine Internetverbindung.', true);
     return;
   }
   if (!navigationTarget) return;
 
   const routeFrom = lastPosition || (marker && marker.getLatLng());
   if (!routeFrom) {
-    setNavigationMessage('Aktueller Standort ist noch nicht verfügbar.', true);
+    setNavigationMessage('Aktueller Standort ist noch nicht verfÃ¼gbar.', true);
     navigator.geolocation.getCurrentPosition(onPosition, onGeoError, {
       enableHighAccuracy: true
     });
@@ -511,11 +511,11 @@ async function startWaterNavigation() {
     format: 'geojson'
   });
 
-  setNavigationMessage('Wasserweg-Route wird berechnet …');
+  setNavigationMessage('Wasserweg-Route wird berechnet â€¦');
   navigationControlElements.start.disabled = true;
 
   try {
-    /* Öffentlicher BRouter-Dienst mit dem Wasserwegprofil "river". */
+    /* Ã–ffentlicher BRouter-Dienst mit dem Wasserwegprofil "river". */
     const response = await fetch(`https://brouter.de/brouter?${params}`);
     if (!response.ok) throw new Error(`Routing-HTTP ${response.status}`);
 
@@ -530,7 +530,7 @@ async function startWaterNavigation() {
 
     const latLngs = geometry.coordinates.map(c => [Number(c[1]), Number(c[0])]);
     if (latLngs.some(c => !Number.isFinite(c[0]) || !Number.isFinite(c[1]))) {
-      throw new Error('Ungültige Routendaten');
+      throw new Error('UngÃ¼ltige Routendaten');
     }
 
     navigationRoute = L.polyline(latLngs, {
@@ -548,7 +548,7 @@ async function startWaterNavigation() {
     const routeHasWeir = warnAboutRouteWeirs(latLngs);
     setNavigationMessage(
       `Wasserweg-Route: ${fmtKm(distance)} km` +
-      (routeHasWeir ? ' · Achtung: Wehr auf/nahe der Route' : ''),
+      (routeHasWeir ? ' Â· Achtung: Wehr auf/nahe der Route' : ''),
       routeHasWeir
     );
     navigationControlElements.stop.hidden = false;
@@ -556,7 +556,7 @@ async function startWaterNavigation() {
   } catch (error) {
     console.error('Wasserweg-Routing fehlgeschlagen:', error);
     setNavigationMessage(
-      'Keine Wasserweg-Route gefunden. Kein Straßenrouting als Ersatz.',
+      'Keine Wasserweg-Route gefunden. Kein StraÃŸenrouting als Ersatz.',
       true
     );
   } finally {
@@ -575,7 +575,7 @@ function chooseNavigationTarget(event) {
     .openPopup();
   navigationControlElements.start.disabled = false;
   navigationControlElements.stop.hidden = true;
-  setNavigationMessage('Ziel gewählt');
+  setNavigationMessage('Ziel gewÃ¤hlt');
 }
 
 function escapeHtml(value) {
@@ -610,7 +610,7 @@ function openPoiDatabase() {
       }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('POI-IndexedDB konnte nicht geöffnet werden'));
+    request.onerror = () => reject(request.error || new Error('POI-IndexedDB konnte nicht geÃ¶ffnet werden'));
   });
 }
 
@@ -792,7 +792,7 @@ async function parseRegionalPoiResponse(response) {
     return JSON.parse(new TextDecoder().decode(bytes));
   }
   if (typeof DecompressionStream !== 'function') {
-    throw new Error('GZIP wird von diesem Browser nicht unterstützt');
+    throw new Error('GZIP wird von diesem Browser nicht unterstÃ¼tzt');
   }
   const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
   return JSON.parse(await new Response(stream).text());
@@ -810,7 +810,7 @@ async function loadRegionalPoiFeatures(region) {
       return features;
     }
     if (!navigator.onLine) throw new Error(`${region.label}-POIs wurden noch nicht heruntergeladen`);
-    setPoiMessage(`${region.label}-POIs werden einmalig geladen …`);
+    setPoiMessage(`${region.label}-POIs werden einmalig geladen â€¦`);
     const response = await fetch(region.package);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const features = storedPoiFeatures(await parseRegionalPoiResponse(response));
@@ -917,7 +917,7 @@ async function activateSpreewaldPois() {
   await spreewaldPoiPromise;
   if (!inSpreewaldPoiArea()) return false;
   if (!spreewaldPoiFeatures.length) {
-    setPoiMessage('Lokale Spreewald-POIs sind nicht verfügbar.', true);
+    setPoiMessage('Lokale Spreewald-POIs sind nicht verfÃ¼gbar.', true);
     return true;
   }
   if (loadedPoiSource !== 'spreewald') {
@@ -987,16 +987,16 @@ function poiPopup(feature) {
     `Typ: ${type}`,
     address && `Adresse: ${address}`,
     tags.operator && `Betreiber: ${tags.operator}`,
-    tags.opening_hours && `Öffnungszeiten: ${tags.opening_hours}`,
+    tags.opening_hours && `Ã–ffnungszeiten: ${tags.opening_hours}`,
     (tags.phone || tags['contact:phone']) && `Telefon: ${tags.phone || tags['contact:phone']}`,
     tags.description && `Beschreibung: ${tags.description}`,
-    tags.fee && `Gebühr: ${tags.fee}`,
+    tags.fee && `GebÃ¼hr: ${tags.fee}`,
     tags.access && `Zugang: ${tags.access}`,
     tags.canoe && `Kanu-Zugang: ${tags.canoe}`
   ].filter(Boolean);
   const website = safeWebsite(tags.website || tags['contact:website']);
   const navigation = POI_TYPES[feature.kind].navigable
-    ? '<br><button type="button" class="navigatePoiBtn">🧭 Dorthin navigieren</button>'
+    ? '<br><button type="button" class="navigatePoiBtn">ðŸ§­ Dorthin navigieren</button>'
     : '';
   return `<strong>${escapeHtml(title)}</strong>${details.length
     ? `<br>${details.map(escapeHtml).join('<br>')}`
@@ -1011,7 +1011,7 @@ function navigateToPoi(feature) {
   L.marker(navigationTarget).addTo(navigationLayer).bindPopup('Navigationsziel');
   navigationControlElements.start.disabled = false;
   navigationControlElements.stop.hidden = true;
-  setNavigationMessage(`${poiTypeName(feature)} als Ziel gewählt`);
+  setNavigationMessage(`${poiTypeName(feature)} als Ziel gewÃ¤hlt`);
   startWaterNavigation();
 }
 
@@ -1146,7 +1146,7 @@ async function applyOfflinePois(pois, metadata = {}) {
 window.loadKajakTrackerOfflinePois = applyOfflinePois;
 window.addEventListener('kajaktracker:offline-pois', event => {
   applyOfflinePois(event.detail?.pois, event.detail?.metadata).catch(error =>
-    console.error('Offline-POIs konnten nicht übernommen werden:', error));
+    console.error('Offline-POIs konnten nicht Ã¼bernommen werden:', error));
 });
 
 function poiLoadCenter() {
@@ -1179,7 +1179,7 @@ async function loadPois(forceRefresh = false) {
   if (!navigator.onLine) {
     updatePoiLayerVisibility();
     setPoiMessage(poiFeatures.length ? 'Gespeicherte POIs werden offline verwendet.' :
-      'POIs benötigen für die erste Abfrage eine Internetverbindung.', !poiFeatures.length);
+      'POIs benÃ¶tigen fÃ¼r die erste Abfrage eine Internetverbindung.', !poiFeatures.length);
     return;
   }
   const refreshArea = forceRefresh || fixedLocalSource || !cacheIsFresh ||
@@ -1188,7 +1188,7 @@ async function loadPois(forceRefresh = false) {
   poiAbortController?.abort();
   poiAbortController = new AbortController();
   poiLoadInFlight = true;
-  setPoiMessage('POIs werden für 30 km geladen …');
+  setPoiMessage('POIs werden fÃ¼r 30 km geladen â€¦');
   try {
     const requestCenter = refreshArea ? center : loadedPoiCenter;
     const data = await fetchPoiOverpass(poiOverpassQuery(requestedTypes, requestCenter));
@@ -1211,7 +1211,7 @@ async function loadPois(forceRefresh = false) {
   } catch (error) {
     if (error.name === 'AbortError') return;
     console.error('POIs konnten nicht geladen werden:', error);
-    setPoiMessage('POIs sind derzeit nicht verfügbar.', true);
+    setPoiMessage('POIs sind derzeit nicht verfÃ¼gbar.', true);
   } finally {
     poiLoadInFlight = false;
   }
@@ -1306,7 +1306,7 @@ function renderSearchResults(results) {
 
 async function searchMap() {
   if (!navigator.onLine) {
-    setSearchMessage('Ortssuche benötigt eine Internetverbindung.', true);
+    setSearchMessage('Ortssuche benÃ¶tigt eine Internetverbindung.', true);
     return;
   }
   const query = searchControlElements.input.value.trim();
@@ -1321,7 +1321,7 @@ async function searchMap() {
   if (cached && Date.now() - cached.savedAt <= NOMINATIM_CACHE_MAX_AGE_MS) {
     renderSearchResults(cached.results);
     setSearchMessage(cached.results.length
-      ? 'Suchergebnisse (© OpenStreetMap)'
+      ? 'Suchergebnisse (Â© OpenStreetMap)'
       : 'Nichts gefunden.');
     return;
   }
@@ -1329,7 +1329,7 @@ async function searchMap() {
 
   searchInFlight = true;
   searchControlElements.submit.disabled = true;
-  setSearchMessage('Suche …');
+  setSearchMessage('Suche â€¦');
   try {
     const wait = Math.max(0,
       NOMINATIM_MIN_INTERVAL_MS - (Date.now() - lastSearchAt));
@@ -1348,10 +1348,10 @@ async function searchMap() {
     const results = Array.isArray(data) ? data : [];
     searchResultCache.set(cacheKey, { results, savedAt: Date.now() });
     renderSearchResults(results);
-    setSearchMessage(results.length ? 'Suchergebnisse (© OpenStreetMap)' : 'Nichts gefunden.');
+    setSearchMessage(results.length ? 'Suchergebnisse (Â© OpenStreetMap)' : 'Nichts gefunden.');
   } catch (error) {
     console.error('Kartensuche fehlgeschlagen:', error);
-    setSearchMessage('Suche derzeit nicht verfügbar.', true);
+    setSearchMessage('Suche derzeit nicht verfÃ¼gbar.', true);
   } finally {
     searchInFlight = false;
     searchControlElements.submit.disabled = false;
@@ -1361,7 +1361,7 @@ async function searchMap() {
 function restaurantType(tags) {
   return {
     restaurant: 'Restaurant',
-    cafe: 'Café',
+    cafe: 'CafÃ©',
     pub: 'Pub',
     biergarten: 'Biergarten',
     fast_food: 'Imbiss'
@@ -1384,8 +1384,8 @@ function addMapToolsControl() {
     const menuButton = document.createElement('button');
     menuButton.type = 'button';
     menuButton.className = 'mapMenuButton';
-    menuButton.textContent = '☰';
-    menuButton.setAttribute('aria-label', 'Kartenfunktionen öffnen');
+    menuButton.textContent = 'â˜°';
+    menuButton.setAttribute('aria-label', 'Kartenfunktionen Ã¶ffnen');
     menuButton.setAttribute('aria-expanded', 'false');
     wrapper.appendChild(menuButton);
 
@@ -1403,9 +1403,9 @@ function addMapToolsControl() {
     });
 
     const tools = [
-      ['previousTracks', '🟡 Bereits gefahrene Strecken', togglePreviousTracks],
-      ['seamark', '⚓ OpenSeaMap', toggleSeamark],
-      ['navigation', '🧭 Navigation', () => setNavigationEnabled(!navigationEnabled)]
+      ['previousTracks', 'ðŸŸ¡ Bereits gefahrene Strecken', togglePreviousTracks],
+      ['seamark', 'âš“ OpenSeaMap', toggleSeamark],
+      ['navigation', 'ðŸ§­ Navigation', () => setNavigationEnabled(!navigationEnabled)]
     ];
 
     offlineMapManager.init(container);
@@ -1462,8 +1462,8 @@ function addPoiControl() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'poiMenuButton';
-    button.textContent = '📍';
-    button.setAttribute('aria-label', 'POI-Menü öffnen');
+    button.textContent = 'ðŸ“';
+    button.setAttribute('aria-label', 'POI-MenÃ¼ Ã¶ffnen');
     button.setAttribute('aria-expanded', 'false');
     const panel = document.createElement('div');
     panel.className = 'poiPanel';
@@ -1508,8 +1508,8 @@ function addSearchControl() {
     const searchButton = document.createElement('button');
     searchButton.type = 'button';
     searchButton.className = 'mapSearchButton';
-    searchButton.textContent = '🔍';
-    searchButton.setAttribute('aria-label', 'Kartensuche öffnen');
+    searchButton.textContent = 'ðŸ”';
+    searchButton.setAttribute('aria-label', 'Kartensuche Ã¶ffnen');
     searchButton.setAttribute('aria-expanded', 'false');
 
     const searchPanel = document.createElement('div');
@@ -1519,7 +1519,7 @@ function addSearchControl() {
     searchRow.className = 'searchRow';
     const searchInput = document.createElement('input');
     searchInput.type = 'search';
-    searchInput.placeholder = 'Ort, Fluss oder Gewässer';
+    searchInput.placeholder = 'Ort, Fluss oder GewÃ¤sser';
     searchInput.setAttribute('aria-label', 'Kartensuche');
     const searchSubmit = document.createElement('button');
     searchSubmit.type = 'button';
@@ -1722,7 +1722,7 @@ function elapsedSeconds() {
 
 
 /* =========================================================
-   BENUTZEROBERFLÄCHE
+   BENUTZEROBERFLÃ„CHE
    ========================================================= */
 
 function updateUI() {
@@ -1764,7 +1764,7 @@ function updateUI() {
 
 
 /* =========================================================
-   TRACK ZURÜCKSETZEN
+   TRACK ZURÃœCKSETZEN
    ========================================================= */
 
 function resetTrack() {
@@ -1902,7 +1902,7 @@ function restoreActiveTrip() {
 
   $('stopBtn').disabled = false;
 
-  $('pauseBtn').textContent = '▶ Weiter';
+  $('pauseBtn').textContent = 'â–¶ Weiter';
 }
 
 
@@ -1915,7 +1915,7 @@ function startGPS() {
   if (!navigator.geolocation) {
 
     alert(
-      'Dieses iPhone unterstützt keine Standortbestimmung im Browser.'
+      'Dieses iPhone unterstÃ¼tzt keine Standortbestimmung im Browser.'
     );
 
     return;
@@ -1996,7 +1996,7 @@ function onPosition(pos) {
 
 
   /*
-    Nur während der Aufzeichnung
+    Nur wÃ¤hrend der Aufzeichnung
     Strecke speichern.
   */
 
@@ -2023,7 +2023,7 @@ function onPosition(pos) {
 
 
       /*
-        Kleine GPS-Sprünge ignorieren.
+        Kleine GPS-SprÃ¼nge ignorieren.
       */
 
       if (
@@ -2186,7 +2186,7 @@ function onGeoError(err) {
 
     alert(
       'Standortzugriff wurde verweigert. ' +
-      'Bitte in den iPhone-Einstellungen den Standortzugriff für Safari erlauben.'
+      'Bitte in den iPhone-Einstellungen den Standortzugriff fÃ¼r Safari erlauben.'
     );
   }
 }
@@ -2213,7 +2213,7 @@ function start() {
 
 
   setStatus(
-    'Aufzeichnung läuft',
+    'Aufzeichnung lÃ¤uft',
     'recording'
   );
 
@@ -2265,7 +2265,7 @@ function pause() {
 
 
     $('pauseBtn').textContent =
-      '▶ Weiter';
+      'â–¶ Weiter';
 
 
     stopGPS();
@@ -2287,13 +2287,13 @@ function pause() {
 
 
     setStatus(
-      'Aufzeichnung läuft',
+      'Aufzeichnung lÃ¤uft',
       'recording'
     );
 
 
     $('pauseBtn').textContent =
-      'Ⅱ Pause';
+      'â…¡ Pause';
 
 
     startGPS();
@@ -2365,7 +2365,7 @@ function stop() {
 
 
   $('pauseBtn').textContent =
-    'Ⅱ Pause';
+    'â…¡ Pause';
 
 
   /*
@@ -2461,7 +2461,7 @@ function saveTrip() {
     startedAt:
       new Date(startedAt).toISOString(),
 
-    /* Für bereits vorhandene Daten und Abwärtskompatibilität. */
+    /* FÃ¼r bereits vorhandene Daten und AbwÃ¤rtskompatibilitÃ¤t. */
     date:
       new Date(startedAt).toISOString(),
 
@@ -2611,7 +2611,7 @@ function renderTrips() {
           </div>
 
           <div>
-            <span>Ø Tempo</span>
+            <span>Ã˜ Tempo</span>
             <strong>
               ${fmt(
                 (Number.isFinite(trip.averageSpeed)
@@ -2654,7 +2654,7 @@ function renderTrips() {
             class="deleteTripBtn"
             data-id="${trip.id}"
           >
-            Löschen
+            LÃ¶schen
           </button>
 
         </div>
@@ -2759,7 +2759,7 @@ function viewTrip(id) {
   ) {
 
     alert(
-      'Diese Fahrt enthält keine ausreichenden GPS-Daten.'
+      'Diese Fahrt enthÃ¤lt keine ausreichenden GPS-Daten.'
     );
 
     return;
@@ -2769,7 +2769,7 @@ function viewTrip(id) {
   selectedTripId = id;
 
 
-  /* Marker der zuvor ausgewählten Fahrt entfernen. */
+  /* Marker der zuvor ausgewÃ¤hlten Fahrt entfernen. */
 
   tripMarkers.clearLayers();
 
@@ -2780,7 +2780,7 @@ function viewTrip(id) {
 
 
   /*
-    Koordinaten für Leaflet.
+    Koordinaten fÃ¼r Leaflet.
   */
 
   const latLngs =
@@ -2922,7 +2922,7 @@ function viewTrip(id) {
 
 
   /*
-    Leaflet nach Größenänderung
+    Leaflet nach GrÃ¶ÃŸenÃ¤nderung
     neu berechnen.
   */
 
@@ -2965,7 +2965,7 @@ function exportSavedTrip(id) {
   ) {
 
     alert(
-      'Diese Fahrt enthält keine GPS-Daten.'
+      'Diese Fahrt enthÃ¤lt keine GPS-Daten.'
     );
 
     return;
@@ -3179,7 +3179,7 @@ function exportGPX() {
 
 
 /* =========================================================
-   FAHRT LÖSCHEN
+   FAHRT LÃ–SCHEN
    ========================================================= */
 
 function deleteTrip(id) {
@@ -3201,7 +3201,7 @@ function deleteTrip(id) {
 
   const ok =
     confirm(
-      'Diese Fahrt wirklich löschen?'
+      'Diese Fahrt wirklich lÃ¶schen?'
     );
 
 
@@ -3239,7 +3239,7 @@ function deleteTrip(id) {
 
 
 /* =========================================================
-   ALLE FAHRTEN LÖSCHEN
+   ALLE FAHRTEN LÃ–SCHEN
    ========================================================= */
 
 function clearAllTrips() {
@@ -3256,7 +3256,7 @@ function clearAllTrips() {
 
   const ok =
     confirm(
-      'Wirklich ALLE gespeicherten Fahrten löschen?'
+      'Wirklich ALLE gespeicherten Fahrten lÃ¶schen?'
     );
 
 
