@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>KajakTracker – Tour importieren</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f3f6f8;
+      color: #173646;
+    }
+    main {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 22px 16px 40px;
+    }
+    .card {
+      background: white;
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.08);
+    }
+    h1 { margin: 0 0 10px; font-size: 26px; }
+    p { line-height: 1.45; }
+    .hint {
+      background: #eef7fa;
+      border-radius: 12px;
+      padding: 12px;
+      margin: 14px 0;
+    }
+    input[type=file] {
+      width: 100%;
+      margin: 10px 0 14px;
+    }
+    button, a.button {
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+      padding: 13px 16px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      display: block;
+    }
+    #importBtn {
+      background: #147aa1;
+      color: white;
+    }
+    #importBtn:disabled {
+      opacity: .45;
+      cursor: default;
+    }
+    a.button {
+      margin-top: 10px;
+      background: #e9eef1;
+      color: #173646;
+    }
+    #preview {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 12px;
+      background: #f7f9fa;
+      display: none;
+    }
+    .trip {
+      padding: 10px 0;
+      border-bottom: 1px solid #dde5e8;
+    }
+    .trip:last-child { border-bottom: 0; }
+    .ok { color: #177245; font-weight: 700; }
+    .error { color: #b42318; font-weight: 700; }
+    small { color: #637681; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Touren importieren</h1>
+    <p>
+      Hier kannst du von ChatGPT erzeugte KajakTracker-Tourdateien importieren.
+      Die Touren werden nur im lokalen Speicher dieses Geräts gespeichert.
+    </p>
+
+    <div class="hint">
+      Du kannst auch mehrere JSON-Dateien gleichzeitig auswählen.
+      Bereits vorhandene Touren mit derselben ID werden übersprungen.
+    </div>
+
+    <input id="files" type="file" accept=".json,application/json" multiple>
+    <button id="importBtn" disabled>Ausgewählte Touren importieren</button>
+
+    <div id="preview"></div>
+
+    <a class="button" href="./">Zurück zum KajakTracker</a>
+  </div>
+</main>
+
+<script>
+const STORAGE_KEY = 'kajakTrips';
+const filesInput = document.getElementById('files');
+const importBtn = document.getElementById('importBtn');
+const preview = document.getElementById('preview');
+
+let pendingTrips = [];
+
+function fmtKm(m) {
+  return (Number(m || 0) / 1000).toFixed(2).replace('.', ',') + ' km';
+}
+
+function fmtDuration(seconds) {
+  seconds = Math.max(0, Math.round(Number(seconds) || 0));
+  const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
+  const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+  const s = String(seconds % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+function validTrip(t) {
+  return t &&
+    typeof t === 'object' &&
+    typeof t.id === 'string' &&
+    Array.isArray(t.track) &&
+    t.track.length >= 2 &&
+    t.track.every(p => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon)));
+}
+
+function normalizePayload(data) {
+  const items = Array.isArray(data) ? data : [data];
+  return items.filter(validTrip);
+}
+
+function renderPreview(message = '') {
+  preview.style.display = 'block';
+  if (message) {
+    preview.innerHTML = message;
+    return;
+  }
+  if (!pendingTrips.length) {
+    preview.innerHTML = '<div class="error">Keine gültige Tourdatei gefunden.</div>';
+    return;
+  }
+  preview.innerHTML =
+    '<strong>Bereit zum Import:</strong>' +
+    pendingTrips.map(t => `
+      <div class="trip">
+        <div><strong>${t.title || 'Kajaktour'}</strong></div>
+        <div>${new Date(t.startedAt || t.date).toLocaleString('de-DE')}</div>
+        <small>${fmtKm(t.distance)} · ${fmtDuration(t.duration)} · ${t.track.length} Punkte</small>
+      </div>
+    `).join('');
+}
+
+filesInput.addEventListener('change', async () => {
+  pendingTrips = [];
+  importBtn.disabled = true;
+  preview.style.display = 'none';
+
+  for (const file of filesInput.files) {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      pendingTrips.push(...normalizePayload(data));
+    } catch (e) {
+      console.error('Datei konnte nicht gelesen werden:', file.name, e);
+    }
+  }
+
+  // Doppelte IDs innerhalb der Auswahl entfernen
+  const seen = new Set();
+  pendingTrips = pendingTrips.filter(t => {
+    if (seen.has(t.id)) return false;
+    seen.add(t.id);
+    return true;
+  });
+
+  importBtn.disabled = pendingTrips.length === 0;
+  renderPreview();
+});
+
+importBtn.addEventListener('click', () => {
+  try {
+    const existingRaw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const existing = Array.isArray(existingRaw) ? existingRaw : [];
+    const ids = new Set(existing.map(t => t && t.id).filter(Boolean));
+
+    let added = 0;
+    let skipped = 0;
+
+    for (const trip of pendingTrips) {
+      if (ids.has(trip.id)) {
+        skipped++;
+        continue;
+      }
+      existing.unshift(trip);
+      ids.add(trip.id);
+      added++;
+    }
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing.slice(0, 100)));
+
+    renderPreview(
+      `<div class="ok">${added} Tour${added === 1 ? '' : 'en'} importiert.</div>` +
+      (skipped ? `<div>${skipped} bereits vorhandene Tour${skipped === 1 ? '' : 'en'} übersprungen.</div>` : '') +
+      '<p>Du kannst jetzt zurück zum KajakTracker gehen.</p>'
+    );
+
+    pendingTrips = [];
+    importBtn.disabled = true;
+    filesInput.value = '';
+  } catch (e) {
+    console.error(e);
+    renderPreview('<div class="error">Import fehlgeschlagen. Bitte erneut versuchen.</div>');
+  }
+});
+</script>
+</body>
+</html>
