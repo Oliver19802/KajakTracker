@@ -10,10 +10,17 @@
     content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   >
 
+  <meta
+    name="theme-color"
+    content="#075579"
+  >
+
   <title>KajakTracker</title>
 
 
-  <!-- Leaflet lokal -->
+  <!-- =====================================================
+       LEAFLET
+       ===================================================== -->
 
   <link
     rel="stylesheet"
@@ -21,7 +28,9 @@
   >
 
 
-  <!-- MapLibre lokal -->
+  <!-- =====================================================
+       MAPLIBRE
+       ===================================================== -->
 
   <link
     rel="stylesheet"
@@ -29,7 +38,9 @@
   >
 
 
-  <!-- Eigene CSS-Datei -->
+  <!-- =====================================================
+       EIGENES DESIGN
+       ===================================================== -->
 
   <link
     rel="stylesheet"
@@ -41,6 +52,16 @@
 
 <body>
 
+
+<!-- =========================================================
+     HEADER
+
+     Das sichtbare Layout wird später durch dashboard-ui.js
+     aufgebaut.
+
+     Der bestehende Status bleibt erhalten, damit app.js
+     weiterhin wie bisher darauf zugreifen kann.
+     ========================================================= -->
 
 <header>
 
@@ -59,6 +80,7 @@
 </header>
 
 
+
 <main>
 
 
@@ -69,25 +91,40 @@
   <div id="map"></div>
 
 
+
   <!-- =====================================================
-       HAUPTBEDIENFELD
+       AUFZEICHNUNG / DASHBOARD
        ===================================================== -->
 
   <section class="panel">
 
 
+    <!-- ===================================================
+         TIMER
+
+         dashboard-ui.js blendet den großen Timer aus und
+         zeigt ihn stattdessen oben im Header an.
+
+         Die ID muss bestehen bleiben, weil app.js sie nutzt.
+         =================================================== -->
+
     <div
       id="timer"
       class="timer"
     >
-
       00:00:00
-
     </div>
 
 
+
+    <!-- ===================================================
+         STATISTIK
+         =================================================== -->
+
     <div class="stats">
 
+
+      <!-- Entfernung -->
 
       <div>
 
@@ -102,6 +139,8 @@
       </div>
 
 
+      <!-- Geschwindigkeit -->
+
       <div>
 
         <span>
@@ -114,6 +153,8 @@
 
       </div>
 
+
+      <!-- Durchschnitt -->
 
       <div>
 
@@ -128,6 +169,8 @@
       </div>
 
 
+      <!-- Maximum -->
+
       <div>
 
         <span>
@@ -140,6 +183,8 @@
 
       </div>
 
+
+      <!-- Trackpunkte -->
 
       <div>
 
@@ -157,6 +202,7 @@
     </div>
 
 
+
     <!-- ===================================================
          START / PAUSE / STOP
          =================================================== -->
@@ -167,36 +213,34 @@
       <button
         id="startBtn"
         class="primary"
+        type="button"
       >
-
         ▶ Start
-
       </button>
 
 
       <button
         id="pauseBtn"
         class="pause"
+        type="button"
         disabled
       >
-
         Ⅱ Pause
-
       </button>
 
 
       <button
         id="stopBtn"
         class="danger"
+        type="button"
         disabled
       >
-
         ■ Stoppen
-
       </button>
 
 
     </div>
+
 
 
     <!-- ===================================================
@@ -206,26 +250,37 @@
     <div class="secondaryButtons">
 
 
-      <button id="locationBtn">
+      <!-- Mein Standort -->
 
+      <button
+        id="locationBtn"
+        type="button"
+      >
         ◎ Mein Standort
-
       </button>
 
 
-      <button id="gpxBtn">
+      <!-- GPX Export -->
 
+      <button
+        id="gpxBtn"
+        type="button"
+      >
         ⇩ GPX Export
-
       </button>
 
 
-      <button id="gpxImportBtn">
+      <!-- GPX Import -->
 
+      <button
+        id="gpxImportBtn"
+        type="button"
+      >
         ⇧ GPX Import
-
       </button>
 
+
+      <!-- Unsichtbare GPX-Dateiauswahl -->
 
       <input
         id="gpxImportInput"
@@ -239,8 +294,9 @@
     </div>
 
 
+
     <!-- ===================================================
-         SICHERHEIT
+         SICHERHEITSHINWEISE
          =================================================== -->
 
     <div class="legalNotice">
@@ -268,17 +324,24 @@
         <strong>kein Navigationssystem</strong>
         und ersetzt keine amtlichen Seekarten, nautischen
         Informationen, Wetterinformationen oder die persönliche
-        Einschätzung der aktuellen Situation. OpenSeaMap und das
-        Wasserweg-Routing sind lediglich Orientierungshilfen.
+        Einschätzung der aktuellen Situation.
 
       </p>
 
 
       <p>
 
-        Angaben zu Schleusen und Wehren aus freien Kartendaten
-        können unvollständig oder veraltet sein. Beschilderung
-        und Sperrungen vor Ort haben immer Vorrang.
+        OpenSeaMap und das Wasserweg-Routing sind lediglich
+        Orientierungshilfen. Angaben zu Schleusen und Wehren
+        aus freien Kartendaten können unvollständig oder
+        veraltet sein.
+
+      </p>
+
+
+      <p>
+
+        Beschilderung und Sperrungen vor Ort haben immer Vorrang.
 
       </p>
 
@@ -305,9 +368,7 @@
       <p>
 
         Die Nutzung der Anwendung erfolgt auf eigene
-        Verantwortung. Eine Haftung wird, soweit gesetzlich
-        zulässig, ausgeschlossen. Gesetzlich zwingende
-        Haftungsfälle bleiben unberührt.
+        Verantwortung.
 
       </p>
 
@@ -324,6 +385,11 @@
       </p>
 
 
+
+      <!-- =================================================
+           DATENSCHUTZ
+           ================================================= -->
+
       <div class="privacyNotice">
 
 
@@ -338,19 +404,22 @@
 
           Aufgezeichnete Fahrten und GPS-Tracks werden lokal
           im Browser beziehungsweise auf dem Gerät gespeichert.
-          Eine zentrale Speicherung dieser Fahrten durch den
-          Betreiber findet nicht statt.
 
         </p>
 
 
         <p>
 
-          Für Karten, Suche, Schleusen und Wehre,
-          Gaststätten sowie Wasserweg-Routing werden externe
-          Dienste aufgerufen. Dabei können technisch notwendige
-          Daten wie IP-Adresse, angefragter Kartenausschnitt,
-          Suchbegriff oder Zielkoordinate übertragen werden.
+          Eine zentrale Speicherung der persönlichen Fahrten
+          durch den Betreiber findet nicht statt.
+
+        </p>
+
+
+        <p>
+
+          Für Karten, Suche, POIs, Ortsbestimmung und Routing
+          können externe Dienste aufgerufen werden.
 
         </p>
 
@@ -373,8 +442,9 @@
   </section>
 
 
+
   <!-- =====================================================
-       FAHRTEN
+       GESPEICHERTE FAHRTEN
        ===================================================== -->
 
   <section class="tripsPanel">
@@ -391,14 +461,14 @@
       <button
         id="clearTripsBtn"
         class="clearTripsBtn"
+        type="button"
       >
-
         Alle löschen
-
       </button>
 
 
     </div>
+
 
 
     <div
@@ -421,65 +491,110 @@
 </main>
 
 
-<!-- =======================================================
-     KARTENBIBLIOTHEKEN
-     ======================================================= -->
+
+<!-- =========================================================
+     JAVASCRIPT
+     ========================================================= -->
+
+
+<!-- =========================================================
+     LEAFLET
+     ========================================================= -->
 
 <script
   src="vendor/leaflet/leaflet.js"
 ></script>
 
 
+
+<!-- =========================================================
+     MAPLIBRE
+     ========================================================= -->
+
 <script
   src="offline-test/vendor/maplibre-gl.js"
 ></script>
 
+
+
+<!-- =========================================================
+     PMTILES
+     ========================================================= -->
 
 <script
   src="offline-test/vendor/pmtiles.js"
 ></script>
 
 
+
+<!-- =========================================================
+     OFFLINE-KARTE
+     ========================================================= -->
+
 <script
   src="offline-map.js?v=16"
 ></script>
 
 
-<!-- =======================================================
-     GPS-QUALITÄT
+
+<!-- =========================================================
+     GPS QUALITÄT
 
      WICHTIG:
-     MUSS VOR app.js geladen werden,
-     damit der bestehende GPS-Watcher
-     erweitert werden kann.
-     ======================================================= -->
+
+     gps-status.js muss VOR app.js geladen werden.
+
+     Dadurch kann die GPS-Anzeige die bereits von app.js
+     verwendeten GPS-Aufrufe mitlesen, ohne einen zweiten
+     GPS-Watcher zu starten.
+     ========================================================= -->
 
 <script
-  src="gps-status.js?v=1"
+  src="gps-status.js?v=3"
 ></script>
 
 
-<!-- =======================================================
-     HAUPT-APP
-     ======================================================= -->
+
+<!-- =========================================================
+     HAUPTPROGRAMM
+     ========================================================= -->
 
 <script
   src="app.js?v=16"
 ></script>
 
 
-<!-- =======================================================
+
+<!-- =========================================================
+     NEUES DASHBOARD-DESIGN
+
+     Verwendet:
+
+     kajaktracker-logo.png
+
+     Die Datei muss im selben Hauptverzeichnis liegen wie
+     index.html.
+     ========================================================= -->
+
+<script
+  src="dashboard-ui.js?v=1"
+></script>
+
+
+
+<!-- =========================================================
      GPX IMPORT
-     ======================================================= -->
+     ========================================================= -->
 
 <script
   src="gpx-import.js?v=1"
 ></script>
 
 
-<!-- =======================================================
+
+<!-- =========================================================
      TOURENANSICHT
-     ======================================================= -->
+     ========================================================= -->
 
 <script
   src="tour-ui.js?v=8"
