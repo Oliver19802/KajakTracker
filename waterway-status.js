@@ -204,12 +204,27 @@ out tags geom;`;
     timer = setTimeout(() => loadWaterways(false), 650);
   }
 
-  const legend = L.control({ position: 'bottomleft' });
+  /* Leaflet bietet standardmäßig nur Ecken für Bedienelemente.
+     Deshalb wird eine eigene Position unten mittig angelegt. */
+  if (!map._controlCorners.bottomcenter) {
+    const bottomCenter = L.DomUtil.create(
+      'div',
+      'leaflet-bottom leaflet-center',
+      map._controlContainer
+    );
+    bottomCenter.style.left = '50%';
+    bottomCenter.style.transform = 'translateX(-50%)';
+    bottomCenter.style.pointerEvents = 'none';
+    map._controlCorners.bottomcenter = bottomCenter;
+  }
+
+  const legend = L.control({ position: 'bottomcenter' });
   legend.onAdd = function () {
     const box = L.DomUtil.create('div', 'waterwayStatusLegend');
     box.style.cssText =
       'background:rgba(255,255,255,.94);padding:7px 9px;border-radius:8px;' +
-      'box-shadow:0 1px 6px rgba(0,0,0,.25);font:12px/1.35 system-ui,sans-serif;color:#183f55';
+      'box-shadow:0 1px 6px rgba(0,0,0,.25);font:12px/1.35 system-ui,sans-serif;color:#183f55;' +
+      'pointer-events:auto;margin-bottom:10px;white-space:nowrap';
     box.innerHTML =
       '<div><span style="display:inline-block;width:24px;border-top:5px solid #168bd2;margin-right:6px;vertical-align:middle"></span>Befahrbar</div>' +
       '<div><span style="display:inline-block;width:24px;border-top:4px dashed #e32636;margin-right:6px;vertical-align:middle"></span>Nicht befahrbar</div>';
