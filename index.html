@@ -17,30 +17,15 @@
 
   <title>KajakTracker</title>
 
-
-  <!-- =====================================================
-       LEAFLET
-       ===================================================== -->
-
   <link
     rel="stylesheet"
     href="vendor/leaflet/leaflet.css"
   >
 
-
-  <!-- =====================================================
-       MAPLIBRE
-       ===================================================== -->
-
   <link
     rel="stylesheet"
     href="offline-test/vendor/maplibre-gl.css"
   >
-
-
-  <!-- =====================================================
-       EIGENES DESIGN
-       ===================================================== -->
 
   <link
     rel="stylesheet"
@@ -49,26 +34,13 @@
 
 </head>
 
-
 <body>
-
-
-<!-- =========================================================
-     HEADER
-
-     Das sichtbare Layout wird später durch dashboard-ui.js
-     aufgebaut.
-
-     Der bestehende Status bleibt erhalten, damit app.js
-     weiterhin wie bisher darauf zugreifen kann.
-     ========================================================= -->
 
 <header>
 
   <div class="title">
     KajakTracker
   </div>
-
 
   <div
     id="status"
@@ -79,34 +51,11 @@
 
 </header>
 
-
-
 <main>
-
-
-  <!-- =====================================================
-       KARTE
-       ===================================================== -->
 
   <div id="map"></div>
 
-
-
-  <!-- =====================================================
-       AUFZEICHNUNG / DASHBOARD
-       ===================================================== -->
-
   <section class="panel">
-
-
-    <!-- ===================================================
-         TIMER
-
-         dashboard-ui.js blendet den großen Timer aus und
-         zeigt ihn stattdessen oben im Header an.
-
-         Die ID muss bestehen bleiben, weil app.js sie nutzt.
-         =================================================== -->
 
     <div
       id="timer"
@@ -115,100 +64,36 @@
       00:00:00
     </div>
 
-
-
-    <!-- ===================================================
-         STATISTIK
-         =================================================== -->
-
     <div class="stats">
 
-
-      <!-- Entfernung -->
-
       <div>
-
-        <span>
-          Entfernung
-        </span>
-
-        <strong id="distance">
-          0,00 km
-        </strong>
-
+        <span>Entfernung</span>
+        <strong id="distance">0,00 km</strong>
       </div>
 
-
-      <!-- Geschwindigkeit -->
-
       <div>
-
-        <span>
-          Geschwindigkeit
-        </span>
-
-        <strong id="speed">
-          0,0 km/h
-        </strong>
-
+        <span>Tempo</span>
+        <strong id="speed">0,0 km/h</strong>
       </div>
 
-
-      <!-- Durchschnitt -->
-
       <div>
-
-        <span>
-          Ø Tempo
-        </span>
-
-        <strong id="average">
-          0,0 km/h
-        </strong>
-
+        <span>Ø Tempo</span>
+        <strong id="average">0,0 km/h</strong>
       </div>
 
-
-      <!-- Maximum -->
-
       <div>
-
-        <span>
-          Max
-        </span>
-
-        <strong id="maxSpeed">
-          0,0 km/h
-        </strong>
-
+        <span>Max</span>
+        <strong id="maxSpeed">0,0 km/h</strong>
       </div>
 
-
-      <!-- Trackpunkte -->
-
       <div>
-
-        <span>
-          Punkte
-        </span>
-
-        <strong id="points">
-          0
-        </strong>
-
+        <span>Punkte</span>
+        <strong id="points">0</strong>
       </div>
-
 
     </div>
 
-
-
-    <!-- ===================================================
-         START / PAUSE / STOP
-         =================================================== -->
-
     <div class="buttons">
-
 
       <button
         id="startBtn"
@@ -217,7 +102,6 @@
       >
         ▶ Start
       </button>
-
 
       <button
         id="pauseBtn"
@@ -228,7 +112,6 @@
         Ⅱ Pause
       </button>
 
-
       <button
         id="stopBtn"
         class="danger"
@@ -238,19 +121,9 @@
         ■ Stoppen
       </button>
 
-
     </div>
 
-
-
-    <!-- ===================================================
-         STANDORT / GPX
-         =================================================== -->
-
     <div class="secondaryButtons">
-
-
-      <!-- Mein Standort -->
 
       <button
         id="locationBtn"
@@ -259,9 +132,6 @@
         ◎ Mein Standort
       </button>
 
-
-      <!-- GPX Export -->
-
       <button
         id="gpxBtn"
         type="button"
@@ -269,18 +139,12 @@
         ⇩ GPX Export
       </button>
 
-
-      <!-- GPX Import -->
-
       <button
         id="gpxImportBtn"
         type="button"
       >
         ⇧ GPX Import
       </button>
-
-
-      <!-- Unsichtbare GPX-Dateiauswahl -->
 
       <input
         id="gpxImportInput"
@@ -290,173 +154,17 @@
         hidden
       >
 
-
     </div>
-
-
-
-    <!-- ===================================================
-         SICHERHEITSHINWEISE
-         =================================================== -->
-
-    <div class="legalNotice">
-
-
-      <div class="legalTitle">
-
-        ⚠️ Wichtiger Sicherheitshinweis
-
-      </div>
-
-
-      <p>
-
-        KajakTracker ist eine private Anwendung zur Aufzeichnung
-        und Darstellung von GPS-Tracks und dient ausschließlich
-        als persönliche Orientierungshilfe.
-
-      </p>
-
-
-      <p>
-
-        Die Anwendung ist
-        <strong>kein Navigationssystem</strong>
-        und ersetzt keine amtlichen Seekarten, nautischen
-        Informationen, Wetterinformationen oder die persönliche
-        Einschätzung der aktuellen Situation.
-
-      </p>
-
-
-      <p>
-
-        OpenSeaMap und das Wasserweg-Routing sind lediglich
-        Orientierungshilfen. Angaben zu Schleusen und Wehren
-        aus freien Kartendaten können unvollständig oder
-        veraltet sein.
-
-      </p>
-
-
-      <p>
-
-        Beschilderung und Sperrungen vor Ort haben immer Vorrang.
-
-      </p>
-
-
-      <p>
-
-        GPS-Positionen, Geschwindigkeiten, Entfernungen,
-        Karten und Seezeichen können fehlerhaft,
-        unvollständig, verzögert oder veraltet sein.
-
-      </p>
-
-
-      <p>
-
-        Insbesondere auf Gewässern mit Schiffsverkehr,
-        Strömungen, Schleusen, Wehren oder anderen Gefahren
-        ist die jeweilige Situation selbstständig zu beurteilen
-        und die erforderliche Sicherheitsausrüstung zu verwenden.
-
-      </p>
-
-
-      <p>
-
-        Die Nutzung der Anwendung erfolgt auf eigene
-        Verantwortung.
-
-      </p>
-
-
-      <p class="privateUse">
-
-        <strong>
-
-          Private Anwendung – nicht zur öffentlichen Nutzung
-          oder als professionelle Navigationshilfe bestimmt.
-
-        </strong>
-
-      </p>
-
-
-
-      <!-- =================================================
-           DATENSCHUTZ
-           ================================================= -->
-
-      <div class="privacyNotice">
-
-
-        <div class="legalTitle">
-
-          Datenschutz / externe Dienste
-
-        </div>
-
-
-        <p>
-
-          Aufgezeichnete Fahrten und GPS-Tracks werden lokal
-          im Browser beziehungsweise auf dem Gerät gespeichert.
-
-        </p>
-
-
-        <p>
-
-          Eine zentrale Speicherung der persönlichen Fahrten
-          durch den Betreiber findet nicht statt.
-
-        </p>
-
-
-        <p>
-
-          Für Karten, Suche, POIs, Ortsbestimmung und Routing
-          können externe Dienste aufgerufen werden.
-
-        </p>
-
-
-        <p>
-
-          Verwendete Dienste können insbesondere
-          OpenStreetMap, OpenSeaMap, Nominatim,
-          Overpass API und BRouter sein.
-
-        </p>
-
-
-      </div>
-
-
-    </div>
-
 
   </section>
 
-
-
-  <!-- =====================================================
-       GESPEICHERTE FAHRTEN
-       ===================================================== -->
-
   <section class="tripsPanel">
 
-
     <div class="tripsHeader">
-
 
       <h2>
         Meine Fahrten
       </h2>
-
 
       <button
         id="clearTripsBtn"
@@ -466,10 +174,7 @@
         Alle löschen
       </button>
 
-
     </div>
-
-
 
     <div
       id="tripsList"
@@ -477,141 +182,142 @@
     >
 
       <div class="noTrips">
-
         Noch keine gespeicherten Fahrten.
-
       </div>
 
     </div>
 
-
   </section>
 
+  <!-- Sicherheitshinweis bewusst ganz unten unter den Fahrten -->
+  <div class="legalNotice">
+
+    <div class="legalTitle">
+      ⚠️ Wichtiger Sicherheitshinweis
+    </div>
+
+    <p>
+      KajakTracker ist eine private Anwendung zur Aufzeichnung
+      und Darstellung von GPS-Tracks und dient ausschließlich
+      als persönliche Orientierungshilfe.
+    </p>
+
+    <p>
+      Die Anwendung ist
+      <strong>kein Navigationssystem</strong>
+      und ersetzt keine amtlichen Seekarten, nautischen
+      Informationen, Wetterinformationen oder die persönliche
+      Einschätzung der aktuellen Situation.
+    </p>
+
+    <p>
+      OpenSeaMap und das Wasserweg-Routing sind lediglich
+      Orientierungshilfen. Angaben zu Schleusen und Wehren
+      aus freien Kartendaten können unvollständig oder
+      veraltet sein.
+    </p>
+
+    <p>
+      Beschilderung und Sperrungen vor Ort haben immer Vorrang.
+    </p>
+
+    <p>
+      GPS-Positionen, Geschwindigkeiten, Entfernungen,
+      Karten und Seezeichen können fehlerhaft,
+      unvollständig, verzögert oder veraltet sein.
+    </p>
+
+    <p>
+      Insbesondere auf Gewässern mit Schiffsverkehr,
+      Strömungen, Schleusen, Wehren oder anderen Gefahren
+      ist die jeweilige Situation selbstständig zu beurteilen
+      und die erforderliche Sicherheitsausrüstung zu verwenden.
+    </p>
+
+    <p>
+      Die Nutzung der Anwendung erfolgt auf eigene
+      Verantwortung.
+    </p>
+
+    <p class="privateUse">
+      <strong>
+        Private Anwendung – nicht zur öffentlichen Nutzung
+        oder als professionelle Navigationshilfe bestimmt.
+      </strong>
+    </p>
+
+    <div class="privacyNotice">
+
+      <div class="legalTitle">
+        Datenschutz / externe Dienste
+      </div>
+
+      <p>
+        Aufgezeichnete Fahrten und GPS-Tracks werden lokal
+        im Browser beziehungsweise auf dem Gerät gespeichert.
+      </p>
+
+      <p>
+        Eine zentrale Speicherung der persönlichen Fahrten
+        durch den Betreiber findet nicht statt.
+      </p>
+
+      <p>
+        Für Karten, Suche, POIs, Ortsbestimmung und Routing
+        können externe Dienste aufgerufen werden.
+      </p>
+
+      <p>
+        Verwendete Dienste können insbesondere
+        OpenStreetMap, OpenSeaMap, Nominatim,
+        Overpass API und BRouter sein.
+      </p>
+
+    </div>
+
+  </div>
 
 </main>
-
-
-
-<!-- =========================================================
-     JAVASCRIPT
-     ========================================================= -->
-
-
-<!-- =========================================================
-     LEAFLET
-     ========================================================= -->
 
 <script
   src="vendor/leaflet/leaflet.js"
 ></script>
 
-
-
-<!-- =========================================================
-     MAPLIBRE
-     ========================================================= -->
-
 <script
   src="offline-test/vendor/maplibre-gl.js"
 ></script>
-
-
-
-<!-- =========================================================
-     PMTILES
-     ========================================================= -->
 
 <script
   src="offline-test/vendor/pmtiles.js"
 ></script>
 
-
-
-<!-- =========================================================
-     OFFLINE-KARTE
-     ========================================================= -->
-
 <script
   src="offline-map.js?v=16"
 ></script>
-
-
-
-<!-- =========================================================
-     GPS QUALITÄT
-
-     WICHTIG:
-
-     gps-status.js muss VOR app.js geladen werden.
-
-     Dadurch kann die GPS-Anzeige die bereits von app.js
-     verwendeten GPS-Aufrufe mitlesen, ohne einen zweiten
-     GPS-Watcher zu starten.
-     ========================================================= -->
 
 <script
   src="gps-status.js?v=3"
 ></script>
 
-
-
-<!-- =========================================================
-     HAUPTPROGRAMM
-     ========================================================= -->
-
 <script
   src="app.js?v=16"
 ></script>
-
-
-<!-- =========================================================
-     KARTEN-LAYER
-
-     Legt die feste Reihenfolge der Kartenebenen fest und
-     zeigt den Live-Track lila an.
-     ========================================================= -->
 
 <script
   src="map-layers.js?v=1"
 ></script>
 
-
-
-<!-- =========================================================
-     NEUES DASHBOARD-DESIGN
-
-     Verwendet:
-
-     kajaktracker-logo.png
-
-     Die Datei muss im selben Hauptverzeichnis liegen wie
-     index.html.
-     ========================================================= -->
-
 <script
   src="dashboard-ui.js?v=1"
 ></script>
-
-
-
-<!-- =========================================================
-     GPX IMPORT
-     ========================================================= -->
 
 <script
   src="gpx-import.js?v=1"
 ></script>
 
-
-
-<!-- =========================================================
-     TOURENANSICHT
-     ========================================================= -->
-
 <script
   src="tour-ui.js?v=8"
 ></script>
-
 
 </body>
 
