@@ -61,19 +61,41 @@
     return tags.waterway === 'river' || tags.waterway === 'canal';
   }
 
-  function lineStyle(navigable) {
+  function waterwayWeight(tags) {
+    const typeWeights = {
+      river: 8,
+      canal: 6,
+      stream: 3,
+      ditch: 2
+    };
+    let weight = typeWeights[tags.waterway] || 3;
+
+    /* Wenn OpenStreetMap eine Breite in Metern enthält,
+       wird sie zusätzlich für die Liniendicke berücksichtigt. */
+    const widthText = String(tags.width || '').replace(',', '.');
+    const widthMeters = Number.parseFloat(widthText);
+    if (Number.isFinite(widthMeters)) {
+      weight = Math.max(weight, Math.min(10, 2 + widthMeters / 4));
+    }
+
+    return weight;
+  }
+
+  function lineStyle(tags, navigable) {
+    const weight = waterwayWeight(tags);
+
     return navigable
       ? {
-          color: '#13a85b',
-          weight: 5,
-          opacity: 0.85,
+          color: '#168bd2',
+          weight,
+          opacity: 0.9,
           pane: 'waterwayStatusPane'
         }
       : {
           color: '#e32636',
-          weight: 5,
+          weight: Math.max(3, weight),
           opacity: 0.95,
-          dashArray: '10 9',
+          dashArray: weight >= 6 ? '14 10' : '9 8',
           lineCap: 'butt',
           pane: 'waterwayStatusPane'
         };
@@ -151,7 +173,7 @@ out tags geom;`;
         if (!navigable && !explicitlyBlocked) return;
 
         const latLngs = way.geometry.map(point => [point.lat, point.lon]);
-        const polyline = L.polyline(latLngs, lineStyle(navigable));
+        const polyline = L.polyline(latLngs, lineStyle(way.tags || {}, navigable));
         polyline.bindPopup(popupText(way.tags || {}, navigable));
         nextLayers.push(polyline);
       });
@@ -178,7 +200,7 @@ out tags geom;`;
       'background:rgba(255,255,255,.94);padding:7px 9px;border-radius:8px;' +
       'box-shadow:0 1px 6px rgba(0,0,0,.25);font:12px/1.35 system-ui,sans-serif;color:#183f55';
     box.innerHTML =
-      '<div><span style="display:inline-block;width:24px;border-top:4px solid #13a85b;margin-right:6px;vertical-align:middle"></span>Befahrbar</div>' +
+      '<div><span style="display:inline-block;width:24px;border-top:5px solid #168bd2;margin-right:6px;vertical-align:middle"></span>Befahrbar</div>' +
       '<div><span style="display:inline-block;width:24px;border-top:4px dashed #e32636;margin-right:6px;vertical-align:middle"></span>Nicht befahrbar</div>';
     L.DomEvent.disableClickPropagation(box);
     return box;
