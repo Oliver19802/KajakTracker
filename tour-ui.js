@@ -1,45 +1,77 @@
 /* =========================================================
    KAJAKTRACKER – MODERNE TOURENANSICHT
-   Version 4
+   Version 5
 
    - Neueste Tour zuerst
-   - Einheitliche Namen: Tour TT.MM.JJJJ
+   - Einheitlicher Titel: Tour TT.MM.JJJJ
    - Echtes Kajak-Bild
    - Moderne Tourenkarten
    - Detailansicht
+   - Ort
+   - Bemerkung
+   - Bearbeiten
    - GPX Export
    - Löschen
 
-   Die eigentliche Aufzeichnung und der GPX-Import
-   werden NICHT verändert.
+   WICHTIG:
+   Die vorhandenen Trackpunkte, Entfernungen, Zeiten,
+   Geschwindigkeiten und GPX-Daten werden NICHT verändert.
+
+   Speicher bleibt:
+   localStorage -> kajakTrips
    ========================================================= */
 
 (function () {
   'use strict';
 
+
+  /* =========================================================
+     PRÜFUNG
+     ========================================================= */
+
   if (typeof getTrips !== 'function') {
-    console.error('Tour-UI: getTrips() ist nicht verfügbar.');
+
+    console.error(
+      'Tour-UI: getTrips() ist nicht verfügbar.'
+    );
+
     return;
   }
+
+
+  const STORAGE_KEY =
+    typeof TRIPS_STORAGE_KEY !== 'undefined'
+      ? TRIPS_STORAGE_KEY
+      : 'kajakTrips';
 
 
   /* =========================================================
      DESIGN
      ========================================================= */
 
-  const style = document.createElement('style');
+  const style =
+    document.createElement(
+      'style'
+    );
+
 
   style.textContent = `
+
+    /* =====================================================
+       FAHRTENLISTE
+       ===================================================== */
 
     .tripsPanel {
       padding: 18px 14px 32px !important;
       background: #f7f9fa !important;
     }
 
+
     .tripsHeader {
       margin-bottom: 16px;
       padding: 0 2px;
     }
+
 
     .tripsHeader h2 {
       color: #183f55;
@@ -48,30 +80,42 @@
     }
 
 
-    /* ---------- Tour Karte ---------- */
+    /* =====================================================
+       TOURENKARTE
+       ===================================================== */
 
     .tourListCard {
       display: grid;
-      grid-template-columns: 68px 1fr 26px;
+
+      grid-template-columns:
+        68px
+        1fr
+        26px;
+
       align-items: center;
+
       gap: 14px;
 
       width: 100%;
 
       margin: 0 0 14px;
+
       padding: 18px 15px;
 
       border: 1px solid #edf1f2;
+
       border-radius: 20px;
 
       background: #ffffff;
 
       box-shadow:
-        0 3px 10px rgba(24, 63, 85, .10);
+        0 3px 10px
+        rgba(24, 63, 85, .10);
 
       color: #183f55;
 
       text-align: left;
+
       cursor: pointer;
 
       transition:
@@ -79,15 +123,19 @@
         box-shadow .12s ease;
     }
 
+
     .tourListCard:active {
       transform: scale(.985);
 
       box-shadow:
-        0 2px 6px rgba(24, 63, 85, .10);
+        0 2px 6px
+        rgba(24, 63, 85, .10);
     }
 
 
-    /* ---------- Kajak Bild ---------- */
+    /* =====================================================
+       KAJAK-BILD
+       ===================================================== */
 
     .tourKayakIcon {
       display: block;
@@ -102,6 +150,7 @@
       background: #e7f4f5;
     }
 
+
     .tourKayakIcon img {
       display: block;
 
@@ -114,17 +163,20 @@
     }
 
 
-    /* ---------- Text ---------- */
+    /* =====================================================
+       TEXT
+       ===================================================== */
 
     .tourListMain {
       display: block;
       min-width: 0;
     }
 
+
     .tourListTitle {
       display: block;
 
-      margin-bottom: 7px;
+      margin-bottom: 6px;
 
       overflow: hidden;
 
@@ -140,45 +192,67 @@
     }
 
 
-    /* ---------- Datum ---------- */
-
-    .tourListDate {
+    .tourListDate,
+    .tourListDistance,
+    .tourListLocation {
       display: flex;
+
       align-items: center;
 
       gap: 7px;
 
       margin-top: 4px;
 
-      color: #365f75;
-
-      font-size: 14px;
-      font-weight: 750;
-
       line-height: 1.35;
     }
 
 
-    /* ---------- Entfernung ---------- */
+    .tourListDate {
+      color: #365f75;
+
+      font-size: 14px;
+      font-weight: 750;
+    }
+
 
     .tourListDistance {
-      display: flex;
-      align-items: center;
-
-      gap: 7px;
-
-      margin-top: 5px;
-
       color: #43a5ad;
 
       font-size: 16px;
       font-weight: 900;
-
-      line-height: 1.3;
     }
 
 
-    /* ---------- Kleine Icons ---------- */
+    .tourListLocation {
+      color: #4d7783;
+
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+
+    .tourListNote {
+      display: -webkit-box;
+
+      margin-top: 7px;
+
+      overflow: hidden;
+
+      color: #69838d;
+
+      font-size: 12px;
+      font-weight: 650;
+
+      line-height: 1.35;
+
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+
+    /* =====================================================
+       KLEINE ICONS
+       ===================================================== */
 
     .tourMetaIcon {
       display: inline-grid;
@@ -192,13 +266,12 @@
       color: #08728b;
     }
 
+
     .tourMetaIcon svg {
       width: 18px;
       height: 18px;
     }
 
-
-    /* ---------- Pfeil rechts ---------- */
 
     .tourChevron {
       display: block;
@@ -214,9 +287,9 @@
     }
 
 
-    /* =========================================================
+    /* =====================================================
        DETAILANSICHT
-       ========================================================= */
+       ===================================================== */
 
     .tourDetail {
       position: fixed;
@@ -236,12 +309,15 @@
       -webkit-overflow-scrolling: touch;
     }
 
+
     .tourDetail[hidden] {
       display: none !important;
     }
 
 
-    /* ---------- Kopf ---------- */
+    /* =====================================================
+       HEADER DETAIL
+       ===================================================== */
 
     .tourDetailHeader {
       position: sticky;
@@ -262,7 +338,10 @@
       min-height: 72px;
 
       padding:
-        max(10px, env(safe-area-inset-top))
+        max(
+          10px,
+          env(safe-area-inset-top)
+        )
         10px
         10px;
 
@@ -270,6 +349,7 @@
 
       color: white;
     }
+
 
     .tourDetailHeader button {
       display: grid;
@@ -292,6 +372,7 @@
       cursor: pointer;
     }
 
+
     .tourDetailTitle {
       overflow: hidden;
 
@@ -309,7 +390,9 @@
     }
 
 
-    /* ---------- Karte ---------- */
+    /* =====================================================
+       KARTE
+       ===================================================== */
 
     .tourDetailMap {
       width: 100%;
@@ -322,19 +405,22 @@
     }
 
 
-    /* ---------- Inhalt ---------- */
-
     .tourDetailBody {
       padding:
         18px
         14px
-        calc(30px + env(safe-area-inset-bottom));
+        calc(
+          30px +
+          env(safe-area-inset-bottom)
+        );
 
       background: #f7f9fa;
     }
 
 
-    /* ---------- Statistik ---------- */
+    /* =====================================================
+       STATISTIK
+       ===================================================== */
 
     .tourStatsCard {
       display: grid;
@@ -352,8 +438,10 @@
       background: white;
 
       box-shadow:
-        0 3px 10px rgba(24, 63, 85, .07);
+        0 3px 10px
+        rgba(24, 63, 85, .07);
     }
+
 
     .tourStat {
       padding: 20px 10px;
@@ -361,15 +449,18 @@
       text-align: center;
     }
 
+
     .tourStat:nth-child(odd) {
       border-right:
         1px solid #d9e8eb;
     }
 
+
     .tourStat:nth-child(n+3) {
       border-top:
         1px solid #d9e8eb;
     }
+
 
     .tourStatLabel {
       margin-bottom: 7px;
@@ -379,6 +470,7 @@
       font-size: 13px;
       font-weight: 850;
     }
+
 
     .tourStatValue {
       color: #183f55;
@@ -390,9 +482,11 @@
     }
 
 
-    /* ---------- Datum Detail ---------- */
+    /* =====================================================
+       INFORMATIONS-KARTEN
+       ===================================================== */
 
-    .tourDateCard {
+    .tourInfoCard {
       margin-top: 15px;
 
       padding: 18px;
@@ -404,43 +498,66 @@
       background: white;
 
       box-shadow:
-        0 3px 10px rgba(24, 63, 85, .07);
-
-      color: #183f55;
-
-      font-size: 17px;
-      font-weight: 850;
-
-      line-height: 1.45;
+        0 3px 10px
+        rgba(24, 63, 85, .07);
     }
 
-    .tourDateRow {
+
+    .tourInfoRow {
       display: flex;
 
-      align-items: center;
+      align-items: flex-start;
 
       gap: 12px;
     }
 
-    .tourDateBigIcon {
+
+    .tourInfoIcon {
       display: grid;
 
-      width: 36px;
-      height: 36px;
+      width: 34px;
+      min-width: 34px;
+      height: 34px;
 
       place-items: center;
 
       color: #08728b;
     }
 
-    .tourDateBigIcon svg {
-      width: 28px;
-      height: 28px;
+
+    .tourInfoIcon svg {
+      width: 27px;
+      height: 27px;
     }
 
-    .tourDateText small {
-      display: block;
 
+    .tourInfoContent {
+      min-width: 0;
+      flex: 1;
+    }
+
+
+    .tourInfoLabel {
+      color: #4d7b86;
+
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+
+    .tourInfoValue {
+      margin-top: 2px;
+
+      color: #183f55;
+
+      font-size: 17px;
+      font-weight: 900;
+
+      overflow-wrap: anywhere;
+    }
+
+
+    .tourInfoSub {
       margin-top: 3px;
 
       color: #607c88;
@@ -450,9 +567,11 @@
     }
 
 
-    /* ---------- Beschreibung ---------- */
+    /* =====================================================
+       BEMERKUNG
+       ===================================================== */
 
-    .tourDescriptionCard {
+    .tourNoteCard {
       margin-top: 15px;
 
       padding: 18px;
@@ -464,10 +583,12 @@
       background: white;
 
       box-shadow:
-        0 3px 10px rgba(24, 63, 85, .07);
+        0 3px 10px
+        rgba(24, 63, 85, .07);
     }
 
-    .tourDescriptionTitle {
+
+    .tourNoteHeader {
       display: flex;
 
       align-items: center;
@@ -480,40 +601,72 @@
       font-weight: 900;
     }
 
-    .tourDescriptionText {
+
+    .tourNoteText {
       margin-top: 12px;
 
-      color: #183f55;
+      color: #385866;
 
       font-size: 15px;
-      font-weight: 650;
+      font-weight: 600;
+
+      line-height: 1.5;
+
+      white-space: pre-wrap;
+
+      overflow-wrap: anywhere;
     }
 
 
-    /* ---------- Aktionen ---------- */
+    .tourNoteText.isEmpty {
+      color: #8aa0a8;
+
+      font-style: italic;
+      font-weight: 600;
+    }
+
+
+    /* =====================================================
+       AKTIONEN
+       ===================================================== */
 
     .tourActionCard {
       display: grid;
 
-      gap: 11px;
+      grid-template-columns:
+        1fr
+        1fr;
+
+      gap: 10px;
 
       margin-top: 16px;
     }
 
+
     .tourActionCard button {
       width: 100%;
 
-      min-height: 54px;
+      min-height: 52px;
+
+      padding: 10px;
 
       border-radius: 15px;
 
       background: white;
 
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 850;
 
       cursor: pointer;
     }
+
+
+    .tourEditBtn {
+      border: 1.5px solid #56a8b3;
+
+      color: #08728b;
+    }
+
 
     .tourExportBtn {
       border: 1.5px solid #56a8b3;
@@ -521,16 +674,225 @@
       color: #08728b;
     }
 
+
     .tourDeleteBtn {
+      grid-column: 1 / -1;
+
       border: 1.5px solid #ef7772;
 
       color: #d33b35;
     }
 
 
-    /* ---------- Smartphone ---------- */
+    /* =====================================================
+       BEARBEITEN-DIALOG
+       ===================================================== */
 
-    @media (max-width: 420px) {
+    .tourEditOverlay {
+      position: fixed;
+
+      inset: 0;
+
+      z-index: 20000;
+
+      display: flex;
+
+      align-items: center;
+      justify-content: center;
+
+      padding:
+        max(
+          18px,
+          env(safe-area-inset-top)
+        )
+        18px
+        max(
+          18px,
+          env(safe-area-inset-bottom)
+        );
+
+      background:
+        rgba(12, 37, 49, .45);
+
+      backdrop-filter:
+        blur(4px);
+
+      -webkit-backdrop-filter:
+        blur(4px);
+    }
+
+
+    .tourEditOverlay[hidden] {
+      display: none !important;
+    }
+
+
+    .tourEditDialog {
+      width: min(
+        100%,
+        520px
+      );
+
+      max-height: 90vh;
+
+      overflow-y: auto;
+
+      padding: 20px;
+
+      border-radius: 22px;
+
+      background: white;
+
+      box-shadow:
+        0 15px 45px
+        rgba(0, 0, 0, .22);
+    }
+
+
+    .tourEditTitle {
+      color: #183f55;
+
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+
+    .tourEditSubtitle {
+      margin-top: 5px;
+      margin-bottom: 18px;
+
+      color: #66818b;
+
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+
+    .tourEditField {
+      display: block;
+
+      margin-top: 15px;
+
+      color: #315967;
+
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+
+    .tourEditField input,
+    .tourEditField textarea {
+      display: block;
+
+      width: 100%;
+
+      margin-top: 7px;
+
+      border:
+        1px solid #b9d6db;
+
+      border-radius: 13px;
+
+      background: #ffffff;
+
+      color: #183f55;
+
+      font-family: inherit;
+
+      font-size: 16px;
+
+      outline: none;
+    }
+
+
+    .tourEditField input {
+      height: 50px;
+
+      padding: 0 13px;
+    }
+
+
+    .tourEditField textarea {
+      min-height: 130px;
+
+      padding: 12px 13px;
+
+      resize: vertical;
+
+      line-height: 1.45;
+    }
+
+
+    .tourEditField input:focus,
+    .tourEditField textarea:focus {
+      border-color: #56a8b3;
+
+      box-shadow:
+        0 0 0 3px
+        rgba(86, 168, 179, .14);
+    }
+
+
+    .tourEditCounter {
+      margin-top: 5px;
+
+      color: #789099;
+
+      font-size: 11px;
+
+      text-align: right;
+    }
+
+
+    .tourEditActions {
+      display: grid;
+
+      grid-template-columns:
+        1fr
+        1fr;
+
+      gap: 10px;
+
+      margin-top: 20px;
+    }
+
+
+    .tourEditActions button {
+      min-height: 50px;
+
+      border-radius: 13px;
+
+      font-size: 15px;
+      font-weight: 850;
+    }
+
+
+    .tourEditCancel {
+      border:
+        1px solid #c8dde1;
+
+      background: #ffffff;
+
+      color: #496974;
+    }
+
+
+    .tourEditSave {
+      border: 0;
+
+      background: #56a8b3;
+
+      color: #ffffff;
+    }
+
+
+    /* =====================================================
+       SMARTPHONE
+       ===================================================== */
+
+    @media (
+      max-width: 420px
+    ) {
 
       .tourListCard {
         grid-template-columns:
@@ -543,6 +905,7 @@
         padding: 16px 12px;
       }
 
+
       .tourKayakIcon {
         width: 60px;
         height: 60px;
@@ -550,90 +913,196 @@
         border-radius: 16px;
       }
 
+
       .tourKayakIcon img {
         border-radius: 16px;
       }
+
 
       .tourListTitle {
         font-size: 18px;
       }
 
+
       .tourListDate {
         font-size: 13px;
       }
+
 
       .tourListDistance {
         font-size: 15px;
       }
 
+
       .tourChevron {
         font-size: 28px;
       }
 
+
       .tourStatValue {
         font-size: 22px;
+      }
+
+
+      .tourActionCard {
+        grid-template-columns: 1fr;
+      }
+
+
+      .tourDeleteBtn {
+        grid-column: auto;
       }
     }
 
   `;
 
-  document.head.appendChild(style);
+
+  document.head.appendChild(
+    style
+  );
 
 
   /* =========================================================
-     ICONS
+     SVG ICONS
      ========================================================= */
 
   const calendarSvg = `
+
     <svg viewBox="0 0 24 24">
+
       <rect
         x="3"
         y="5"
         width="18"
         height="16"
         rx="2"
+
         fill="none"
+
         stroke="currentColor"
         stroke-width="2"
       />
+
       <path
-        d="M7 3v4M17 3v4M3 10h18"
+        d="
+          M7 3v4
+          M17 3v4
+          M3 10h18
+        "
+
         fill="none"
+
         stroke="currentColor"
         stroke-width="2"
         stroke-linecap="round"
       />
+
     </svg>
   `;
 
 
   const rulerSvg = `
+
     <svg viewBox="0 0 24 24">
+
       <rect
         x="3"
         y="7"
         width="18"
         height="10"
         rx="2"
+
         fill="none"
+
         stroke="currentColor"
         stroke-width="2"
       />
+
       <path
-        d="M7 7v5M10 7v3M13 7v5M16 7v3"
+        d="
+          M7 7v5
+          M10 7v3
+          M13 7v5
+          M16 7v3
+        "
+
         fill="none"
+
         stroke="currentColor"
         stroke-width="1.8"
       />
+
+    </svg>
+  `;
+
+
+  const pinSvg = `
+
+    <svg viewBox="0 0 24 24">
+
+      <path
+        d="
+          M12 21
+          C12 21 5 14.7 5 9
+          A7 7 0 0 1 19 9
+          C19 14.7 12 21 12 21Z
+        "
+
+        fill="none"
+
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linejoin="round"
+      />
+
+      <circle
+        cx="12"
+        cy="9"
+        r="2.5"
+
+        fill="none"
+
+        stroke="currentColor"
+        stroke-width="2"
+      />
+
+    </svg>
+  `;
+
+
+  const noteSvg = `
+
+    <svg viewBox="0 0 24 24">
+
+      <path
+        d="
+          M5 5
+          H19
+          M5 10
+          H19
+          M5 15
+          H15
+        "
+
+        fill="none"
+
+        stroke="currentColor"
+        stroke-width="2"
+
+        stroke-linecap="round"
+      />
+
     </svg>
   `;
 
 
   /* =========================================================
-     FORMATIERUNG
+     HILFSFUNKTIONEN
      ========================================================= */
 
-  function getTripStart(trip) {
+  function getTripStart(
+    trip
+  ) {
 
     return (
       trip.startedAt ||
@@ -645,7 +1114,9 @@
   }
 
 
-  function dateValue(trip) {
+  function dateValue(
+    trip
+  ) {
 
     const value =
       getTripStart(
@@ -658,7 +1129,7 @@
     }
 
 
-    const d =
+    const date =
       new Date(
         value
       );
@@ -666,20 +1137,22 @@
 
     if (
       Number.isNaN(
-        d.getTime()
+        date.getTime()
       )
     ) {
       return 0;
     }
 
 
-    return d.getTime();
+    return date.getTime();
   }
 
 
-  function formatDateLong(value) {
+  function formatDateLong(
+    value
+  ) {
 
-    const d =
+    const date =
       new Date(
         value
       );
@@ -687,27 +1160,33 @@
 
     if (
       Number.isNaN(
-        d.getTime()
+        date.getTime()
       )
     ) {
-      return 'Datum unbekannt';
+
+      return (
+        'Datum unbekannt'
+      );
     }
 
 
-    return d.toLocaleDateString(
-      'de-DE',
-      {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      }
-    );
+    return date
+      .toLocaleDateString(
+        'de-DE',
+        {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }
+      );
   }
 
 
-  function formatDateShort(value) {
+  function formatDateShort(
+    value
+  ) {
 
-    const d =
+    const date =
       new Date(
         value
       );
@@ -715,27 +1194,30 @@
 
     if (
       Number.isNaN(
-        d.getTime()
+        date.getTime()
       )
     ) {
       return '';
     }
 
 
-    return d.toLocaleDateString(
-      'de-DE',
-      {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      }
-    );
+    return date
+      .toLocaleDateString(
+        'de-DE',
+        {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        }
+      );
   }
 
 
-  function formatClock(value) {
+  function formatClock(
+    value
+  ) {
 
-    const d =
+    const date =
       new Date(
         value
       );
@@ -743,24 +1225,27 @@
 
     if (
       Number.isNaN(
-        d.getTime()
+        date.getTime()
       )
     ) {
       return '--:--';
     }
 
 
-    return d.toLocaleTimeString(
-      'de-DE',
-      {
-        hour: '2-digit',
-        minute: '2-digit'
-      }
-    );
+    return date
+      .toLocaleTimeString(
+        'de-DE',
+        {
+          hour: '2-digit',
+          minute: '2-digit'
+        }
+      );
   }
 
 
-  function formatDuration(seconds) {
+  function formatDuration(
+    seconds
+  ) {
 
     const total =
       Math.max(
@@ -779,7 +1264,9 @@
 
     const minutes =
       Math.floor(
-        (total % 3600) / 60
+        (
+          total % 3600
+        ) / 60
       );
 
 
@@ -788,48 +1275,112 @@
 
 
     return (
-      String(hours).padStart(2, '0') +
-      ':' +
-      String(minutes).padStart(2, '0') +
-      ':' +
-      String(secs).padStart(2, '0')
+
+      String(
+        hours
+      ).padStart(
+        2,
+        '0'
+      )
+
+      +
+
+      ':'
+
+      +
+
+      String(
+        minutes
+      ).padStart(
+        2,
+        '0'
+      )
+
+      +
+
+      ':'
+
+      +
+
+      String(
+        secs
+      ).padStart(
+        2,
+        '0'
+      )
     );
   }
 
 
-  function formatKm(meters) {
+  function formatKm(
+    meters
+  ) {
 
     return (
+
       (
         Math.max(
           0,
           Number(meters) || 0
-        ) / 1000
+        )
+
+        /
+
+        1000
       )
-        .toFixed(2)
-        .replace('.', ',') +
+
+      .toFixed(
+        2
+      )
+
+      .replace(
+        '.',
+        ','
+      )
+
+      +
+
       ' km'
     );
   }
 
 
-  function formatKmh(ms) {
+  function formatKmh(
+    ms
+  ) {
 
     return (
+
       (
         Math.max(
           0,
           Number(ms) || 0
-        ) * 3.6
+        )
+
+        *
+
+        3.6
       )
-        .toFixed(1)
-        .replace('.', ',') +
+
+      .toFixed(
+        1
+      )
+
+      .replace(
+        '.',
+        ','
+      )
+
+      +
+
       ' km/h'
     );
   }
 
 
-  function tripAverage(trip) {
+  function tripAverage(
+    trip
+  ) {
 
     if (
       Number.isFinite(
@@ -838,6 +1389,7 @@
         )
       )
     ) {
+
       return Number(
         trip.averageSpeed
       );
@@ -850,45 +1402,98 @@
       ) || 0;
 
 
-    if (duration <= 0) {
+    if (
+      duration <= 0
+    ) {
       return 0;
     }
 
 
     return (
-      Number(
-        trip.distance
-      ) || 0
-    ) / duration;
+
+      (
+        Number(
+          trip.distance
+        ) || 0
+      )
+
+      /
+
+      duration
+    );
   }
 
 
   /* =========================================================
-     EINHEITLICHER TOURENNAME
+     EINHEITLICHER TOURNAME
      ========================================================= */
 
-  function tripTitle(trip) {
-
-    const start =
-      getTripStart(
-        trip
-      );
-
+  function tripTitle(
+    trip
+  ) {
 
     const formatted =
       formatDateShort(
-        start
+        getTripStart(
+          trip
+        )
       );
 
 
-    if (!formatted) {
-      return 'Tour';
+    return formatted
+      ? (
+          'Tour ' +
+          formatted
+        )
+      : 'Tour';
+  }
+
+
+  /* =========================================================
+     ORT
+     ========================================================= */
+
+  function tripLocation(
+    trip
+  ) {
+
+    const own =
+      String(
+        trip.locationName ||
+        ''
+      ).trim();
+
+
+    if (own) {
+      return own;
     }
 
 
+    /*
+      Alte und GPX-importierte Fahrten
+      bleiben gültig.
+
+      Automatische Ortsermittlung bauen
+      wir später in die Aufzeichnung ein.
+    */
+
     return (
-      'Tour ' +
-      formatted
+      'Unbekannter Ort'
+    );
+  }
+
+
+  /* =========================================================
+     BEMERKUNG
+     ========================================================= */
+
+  function tripNote(
+    trip
+  ) {
+
+    return String(
+      trip.note ||
+      ''
     );
   }
 
@@ -897,7 +1502,9 @@
      ENDE DER TOUR
      ========================================================= */
 
-  function tripEndTime(trip) {
+  function tripEndTime(
+    trip
+  ) {
 
     const start =
       new Date(
@@ -912,6 +1519,7 @@
         start.getTime()
       )
     ) {
+
       return null;
     }
 
@@ -926,15 +1534,27 @@
 
 
     return new Date(
-      start.getTime() +
+
+      start.getTime()
+
+      +
+
       duration * 1000
     );
   }
 
 
-  function escapeHtml(value) {
+  /* =========================================================
+     HTML ESCAPEN
+     ========================================================= */
 
-    return String(value)
+  function escapeHtml(
+    value
+  ) {
+
+    return String(
+      value
+    )
 
       .replace(
         /&/g,
@@ -964,31 +1584,560 @@
 
 
   /* =========================================================
+     FAHRT SICHER AKTUALISIEREN
+
+     Ändert NUR:
+     - locationName
+     - note
+     ========================================================= */
+
+  function updateTripMetadata(
+    id,
+    locationName,
+    note
+  ) {
+
+    let trips;
+
+
+    try {
+
+      trips =
+        JSON.parse(
+          localStorage.getItem(
+            STORAGE_KEY
+          ) || '[]'
+        );
+
+    } catch (error) {
+
+      console.error(
+        'Fahrten konnten nicht gelesen werden:',
+        error
+      );
+
+      return false;
+    }
+
+
+    if (
+      !Array.isArray(
+        trips
+      )
+    ) {
+
+      return false;
+    }
+
+
+    const index =
+      trips.findIndex(
+        function (trip) {
+
+          return (
+            String(
+              trip.id
+            )
+
+            ===
+
+            String(
+              id
+            )
+          );
+        }
+      );
+
+
+    if (
+      index < 0
+    ) {
+
+      return false;
+    }
+
+
+    /*
+      WICHTIG:
+
+      Alle bestehenden Felder bleiben erhalten.
+
+      Insbesondere:
+      track
+      distance
+      duration
+      maxSpeed
+      averageSpeed
+      startedAt
+      date
+    */
+
+    trips[index] = {
+
+      ...trips[index],
+
+      locationName:
+        String(
+          locationName ||
+          ''
+        )
+        .trim()
+        .slice(
+          0,
+          120
+        ),
+
+      note:
+        String(
+          note ||
+          ''
+        )
+        .slice(
+          0,
+          1000
+        )
+    };
+
+
+    try {
+
+      localStorage.setItem(
+
+        STORAGE_KEY,
+
+        JSON.stringify(
+          trips
+        )
+      );
+
+
+      return true;
+
+    } catch (error) {
+
+      console.error(
+        'Fahrt konnte nicht gespeichert werden:',
+        error
+      );
+
+
+      return false;
+    }
+  }
+
+
+  /* =========================================================
      DETAILANSICHT
      ========================================================= */
 
   let detailRoot =
     null;
 
+
   let detailMap =
     null;
+
 
   let detailTrackLayer =
     null;
 
+
   let detailStartMarker =
     null;
 
+
   let detailEndMarker =
     null;
+
 
   let currentDetailId =
     null;
 
 
+  /* =========================================================
+     BEARBEITEN-DIALOG
+     ========================================================= */
+
+  let editOverlay =
+    null;
+
+
+  let editLocationInput =
+    null;
+
+
+  let editNoteInput =
+    null;
+
+
+  let editCounter =
+    null;
+
+
+  function ensureEditDialog() {
+
+    if (
+      editOverlay
+    ) {
+      return;
+    }
+
+
+    editOverlay =
+      document.createElement(
+        'div'
+      );
+
+
+    editOverlay.className =
+      'tourEditOverlay';
+
+
+    editOverlay.hidden =
+      true;
+
+
+    editOverlay.innerHTML = `
+
+      <div
+        class="tourEditDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Tour bearbeiten"
+      >
+
+        <div class="tourEditTitle">
+
+          Tour bearbeiten
+
+        </div>
+
+
+        <div class="tourEditSubtitle">
+
+          Ort und Bemerkung können geändert werden.
+          Der GPS-Track bleibt unverändert.
+
+        </div>
+
+
+        <label class="tourEditField">
+
+          Ort
+
+          <input
+            type="text"
+            class="tourEditLocation"
+            maxlength="120"
+            autocomplete="off"
+            placeholder="z. B. Leipe"
+          >
+
+        </label>
+
+
+        <label class="tourEditField">
+
+          Bemerkung
+
+          <textarea
+            class="tourEditNote"
+            maxlength="1000"
+            placeholder="Optional – z. B. schöne Runde durch die Fließe."
+          ></textarea>
+
+        </label>
+
+
+        <div class="tourEditCounter">
+
+          0 / 1000
+
+        </div>
+
+
+        <div class="tourEditActions">
+
+          <button
+            type="button"
+            class="tourEditCancel"
+          >
+            Abbrechen
+          </button>
+
+
+          <button
+            type="button"
+            class="tourEditSave"
+          >
+            Speichern
+          </button>
+
+        </div>
+
+      </div>
+    `;
+
+
+    document.body.appendChild(
+      editOverlay
+    );
+
+
+    editLocationInput =
+      editOverlay.querySelector(
+        '.tourEditLocation'
+      );
+
+
+    editNoteInput =
+      editOverlay.querySelector(
+        '.tourEditNote'
+      );
+
+
+    editCounter =
+      editOverlay.querySelector(
+        '.tourEditCounter'
+      );
+
+
+    editNoteInput
+      .addEventListener(
+        'input',
+        function () {
+
+          editCounter.textContent =
+
+            editNoteInput.value.length
+
+            +
+
+            ' / 1000';
+        }
+      );
+
+
+    editOverlay
+      .querySelector(
+        '.tourEditCancel'
+      )
+
+      .addEventListener(
+        'click',
+        closeEditDialog
+      );
+
+
+    editOverlay
+      .querySelector(
+        '.tourEditSave'
+      )
+
+      .addEventListener(
+        'click',
+        saveEditDialog
+      );
+
+
+    editOverlay
+      .addEventListener(
+        'click',
+        function (event) {
+
+          if (
+            event.target ===
+            editOverlay
+          ) {
+
+            closeEditDialog();
+          }
+        }
+      );
+  }
+
+
+  function openEditDialog(
+    id
+  ) {
+
+    const trip =
+      getTrips().find(
+        function (item) {
+
+          return (
+            String(
+              item.id
+            )
+
+            ===
+
+            String(
+              id
+            )
+          );
+        }
+      );
+
+
+    if (!trip) {
+
+      alert(
+        'Die Tour wurde nicht gefunden.'
+      );
+
+      return;
+    }
+
+
+    ensureEditDialog();
+
+
+    currentDetailId =
+      String(
+        trip.id
+      );
+
+
+    editLocationInput.value =
+
+      trip.locationName
+
+        ?
+
+        String(
+          trip.locationName
+        )
+
+        :
+
+        '';
+
+
+    editNoteInput.value =
+      tripNote(
+        trip
+      );
+
+
+    editCounter.textContent =
+
+      editNoteInput.value.length
+
+      +
+
+      ' / 1000';
+
+
+    editOverlay.hidden =
+      false;
+
+
+    setTimeout(
+      function () {
+
+        editLocationInput.focus();
+
+      },
+      100
+    );
+  }
+
+
+  function closeEditDialog() {
+
+    if (!editOverlay) {
+      return;
+    }
+
+
+    editOverlay.hidden =
+      true;
+  }
+
+
+  function saveEditDialog() {
+
+    if (
+      !currentDetailId
+    ) {
+      return;
+    }
+
+
+    let locationName =
+      editLocationInput.value
+        .trim();
+
+
+    const note =
+      editNoteInput.value
+        .slice(
+          0,
+          1000
+        );
+
+
+    if (!locationName) {
+
+      locationName =
+        'Unbekannter Ort';
+    }
+
+
+    const saved =
+      updateTripMetadata(
+
+        currentDetailId,
+
+        locationName,
+
+        note
+      );
+
+
+    if (!saved) {
+
+      alert(
+        'Die Änderungen konnten nicht gespeichert werden.'
+      );
+
+      return;
+    }
+
+
+    closeEditDialog();
+
+
+    modernRenderTrips();
+
+
+    /*
+      Detailansicht mit aktualisierten
+      Daten neu aufbauen.
+    */
+
+    if (
+      detailRoot &&
+      !detailRoot.hidden
+    ) {
+
+      openDetail(
+        currentDetailId
+      );
+    }
+  }
+
+
+  /* =========================================================
+     DETAIL-DOM
+     ========================================================= */
+
   function ensureDetail() {
 
-    if (detailRoot) {
+    if (
+      detailRoot
+    ) {
       return;
     }
 
@@ -1016,12 +2165,18 @@
           class="tourBackBtn"
           aria-label="Zurück"
         >
+
           ‹
+
         </button>
 
+
         <div class="tourDetailTitle">
+
           Tour
+
         </div>
+
 
         <div></div>
 
@@ -1043,14 +2198,18 @@
           <div class="tourStat">
 
             <div class="tourStatLabel">
+
               Distanz
+
             </div>
 
             <div
               class="tourStatValue"
               data-field="distance"
             >
+
               0,00 km
+
             </div>
 
           </div>
@@ -1059,14 +2218,18 @@
           <div class="tourStat">
 
             <div class="tourStatLabel">
+
               Dauer
+
             </div>
 
             <div
               class="tourStatValue"
               data-field="duration"
             >
+
               00:00:00
+
             </div>
 
           </div>
@@ -1075,14 +2238,18 @@
           <div class="tourStat">
 
             <div class="tourStatLabel">
+
               Ø Geschwindigkeit
+
             </div>
 
             <div
               class="tourStatValue"
               data-field="average"
             >
+
               0,0 km/h
+
             </div>
 
           </div>
@@ -1091,14 +2258,18 @@
           <div class="tourStat">
 
             <div class="tourStatLabel">
+
               Max. Geschwindigkeit
+
             </div>
 
             <div
               class="tourStatValue"
               data-field="max"
             >
+
               0,0 km/h
+
             </div>
 
           </div>
@@ -1107,23 +2278,44 @@
         </div>
 
 
-        <div class="tourDateCard">
+        <!-- Datum -->
 
-          <div class="tourDateRow">
+        <div class="tourInfoCard">
 
-            <div class="tourDateBigIcon">
+          <div class="tourInfoRow">
+
+            <div class="tourInfoIcon">
+
               ${calendarSvg}
+
             </div>
 
-            <div class="tourDateText">
 
-              <div data-field="date">
+            <div class="tourInfoContent">
+
+              <div class="tourInfoLabel">
+
                 Datum
+
               </div>
 
-              <small data-field="time">
+              <div
+                class="tourInfoValue"
+                data-field="date"
+              >
+
+                Datum
+
+              </div>
+
+              <div
+                class="tourInfoSub"
+                data-field="time"
+              >
+
                 Uhrzeit
-              </small>
+
+              </div>
 
             </div>
 
@@ -1132,45 +2324,106 @@
         </div>
 
 
-        <div class="tourDescriptionCard">
+        <!-- Ort -->
 
-          <div class="tourDescriptionTitle">
+        <div class="tourInfoCard">
 
-            <span>
-              ☰
-            </span>
+          <div class="tourInfoRow">
 
-            <span>
-              Beschreibung
-            </span>
+            <div class="tourInfoIcon">
 
-          </div>
+              ${pinSvg}
 
-          <div
-            class="tourDescriptionText"
-            data-field="description"
-          >
-            Tour
+            </div>
+
+
+            <div class="tourInfoContent">
+
+              <div class="tourInfoLabel">
+
+                Ort
+
+              </div>
+
+              <div
+                class="tourInfoValue"
+                data-field="location"
+              >
+
+                Unbekannter Ort
+
+              </div>
+
+            </div>
+
           </div>
 
         </div>
 
 
+        <!-- Bemerkung -->
+
+        <div class="tourNoteCard">
+
+          <div class="tourNoteHeader">
+
+            <span class="tourInfoIcon">
+
+              ${noteSvg}
+
+            </span>
+
+            <span>
+
+              Bemerkung
+
+            </span>
+
+          </div>
+
+
+          <div
+            class="tourNoteText"
+            data-field="note"
+          ></div>
+
+        </div>
+
+
+        <!-- Aktionen -->
+
         <div class="tourActionCard">
+
+
+          <button
+            type="button"
+            class="tourEditBtn"
+          >
+
+            ✎ &nbsp; Bearbeiten
+
+          </button>
+
 
           <button
             type="button"
             class="tourExportBtn"
           >
+
             ⇩ &nbsp; GPX exportieren
+
           </button>
+
 
           <button
             type="button"
             class="tourDeleteBtn"
           >
+
             🗑 &nbsp; Tour löschen
+
           </button>
+
 
         </div>
 
@@ -1184,25 +2437,56 @@
     );
 
 
+    /* Zurück */
+
     detailRoot
       .querySelector(
         '.tourBackBtn'
       )
+
       .addEventListener(
         'click',
         closeDetail
       );
 
 
+    /* Bearbeiten */
+
     detailRoot
       .querySelector(
-        '.tourExportBtn'
+        '.tourEditBtn'
       )
+
       .addEventListener(
         'click',
         function () {
 
-          if (!currentDetailId) {
+          if (
+            currentDetailId
+          ) {
+
+            openEditDialog(
+              currentDetailId
+            );
+          }
+        }
+      );
+
+
+    /* GPX */
+
+    detailRoot
+      .querySelector(
+        '.tourExportBtn'
+      )
+
+      .addEventListener(
+        'click',
+        function () {
+
+          if (
+            !currentDetailId
+          ) {
             return;
           }
 
@@ -1226,15 +2510,20 @@
       );
 
 
+    /* Löschen */
+
     detailRoot
       .querySelector(
         '.tourDeleteBtn'
       )
+
       .addEventListener(
         'click',
         function () {
 
-          if (!currentDetailId) {
+          if (
+            !currentDetailId
+          ) {
             return;
           }
 
@@ -1276,15 +2565,24 @@
      TOUR ÖFFNEN
      ========================================================= */
 
-  function openDetail(id) {
+  function openDetail(
+    id
+  ) {
 
     const trip =
       getTrips().find(
         function (item) {
 
           return (
-            String(item.id) ===
-            String(id)
+            String(
+              item.id
+            )
+
+            ===
+
+            String(
+              id
+            )
           );
         }
       );
@@ -1303,7 +2601,10 @@
     if (
       !Array.isArray(
         trip.track
-      ) ||
+      )
+
+      ||
+
       trip.track.length < 2
     ) {
 
@@ -1324,27 +2625,19 @@
       );
 
 
-    const title =
-      tripTitle(
-        trip
-      );
-
+    /* Titel */
 
     detailRoot
       .querySelector(
         '.tourDetailTitle'
       )
       .textContent =
-        title;
+        tripTitle(
+          trip
+        );
 
 
-    detailRoot
-      .querySelector(
-        '[data-field="description"]'
-      )
-      .textContent =
-        title;
-
+    /* Statistik */
 
     detailRoot
       .querySelector(
@@ -1388,6 +2681,8 @@
         );
 
 
+    /* Datum */
+
     const start =
       getTripStart(
         trip
@@ -1415,18 +2710,78 @@
         '[data-field="time"]'
       )
       .textContent =
+
         formatClock(
           start
-        ) +
-        ' – ' +
+        )
+
+        +
+
+        ' – '
+
+        +
+
         (
           end
             ? formatClock(
                 end
               )
             : '--:--'
-        ) +
+        )
+
+        +
+
         ' Uhr';
+
+
+    /* Ort */
+
+    detailRoot
+      .querySelector(
+        '[data-field="location"]'
+      )
+      .textContent =
+        tripLocation(
+          trip
+        );
+
+
+    /* Bemerkung */
+
+    const note =
+      tripNote(
+        trip
+      );
+
+
+    const noteElement =
+      detailRoot.querySelector(
+        '[data-field="note"]'
+      );
+
+
+    if (
+      note.trim()
+    ) {
+
+      noteElement.textContent =
+        note;
+
+
+      noteElement.classList.remove(
+        'isEmpty'
+      );
+
+    } else {
+
+      noteElement.textContent =
+        'Keine Bemerkung eingetragen.';
+
+
+      noteElement.classList.add(
+        'isEmpty'
+      );
+    }
 
 
     detailRoot.hidden =
@@ -1452,7 +2807,9 @@
      KARTE ZEICHNEN
      ========================================================= */
 
-  function drawDetailMap(trip) {
+  function drawDetailMap(
+    trip
+  ) {
 
     if (
       typeof L ===
@@ -1480,52 +2837,71 @@
 
 
       L.tileLayer(
+
         'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+
         {
           maxZoom: 19,
 
           attribution:
             '&copy; OpenStreetMap contributors'
         }
-      )
-      .addTo(
+
+      ).addTo(
         detailMap
       );
     }
 
 
-    if (detailTrackLayer) {
+    /* Alten Track entfernen */
+
+    if (
+      detailTrackLayer
+    ) {
 
       detailMap.removeLayer(
         detailTrackLayer
       );
+
 
       detailTrackLayer =
         null;
     }
 
 
-    if (detailStartMarker) {
+    /* Startmarker entfernen */
+
+    if (
+      detailStartMarker
+    ) {
 
       detailMap.removeLayer(
         detailStartMarker
       );
+
 
       detailStartMarker =
         null;
     }
 
 
-    if (detailEndMarker) {
+    /* Endmarker entfernen */
+
+    if (
+      detailEndMarker
+    ) {
 
       detailMap.removeLayer(
         detailEndMarker
       );
 
+
       detailEndMarker =
         null;
     }
 
+
+    /* Koordinaten */
 
     const latLngs =
       trip.track
@@ -1534,11 +2910,15 @@
           function (point) {
 
             return (
+
               Number.isFinite(
                 Number(
                   point.lat
                 )
-              ) &&
+              )
+
+              &&
+
               Number.isFinite(
                 Number(
                   point.lon
@@ -1552,9 +2932,11 @@
           function (point) {
 
             return [
+
               Number(
                 point.lat
               ),
+
               Number(
                 point.lon
               )
@@ -1566,29 +2948,39 @@
     if (
       latLngs.length < 2
     ) {
+
       return;
     }
 
+
+    /* Track */
 
     detailTrackLayer =
       L.polyline(
         latLngs,
         {
-          color: '#ff5733',
+          color:
+            '#ff5733',
 
-          weight: 6,
+          weight:
+            6,
 
-          opacity: .96,
+          opacity:
+            .96,
 
-          lineCap: 'round',
+          lineCap:
+            'round',
 
-          lineJoin: 'round'
+          lineJoin:
+            'round'
         }
       )
       .addTo(
         detailMap
       );
 
+
+    /* Start */
 
     detailStartMarker =
       L.circleMarker(
@@ -1598,17 +2990,22 @@
 
           weight: 4,
 
-          color: '#ffffff',
+          color:
+            '#ffffff',
 
-          fillColor: '#24ae59',
+          fillColor:
+            '#24ae59',
 
-          fillOpacity: 1
+          fillOpacity:
+            1
         }
       )
       .addTo(
         detailMap
       );
 
+
+    /* Ende */
 
     detailEndMarker =
       L.circleMarker(
@@ -1620,11 +3017,14 @@
 
           weight: 4,
 
-          color: '#ffffff',
+          color:
+            '#ffffff',
 
-          fillColor: '#ef4035',
+          fillColor:
+            '#ef4035',
 
-          fillOpacity: 1
+          fillOpacity:
+            1
         }
       )
       .addTo(
@@ -1633,9 +3033,11 @@
 
 
     detailMap.fitBounds(
+
       L.latLngBounds(
         latLngs
       ),
+
       {
         padding: [
           28,
@@ -1662,7 +3064,9 @@
 
   function closeDetail() {
 
-    if (!detailRoot) {
+    if (
+      !detailRoot
+    ) {
       return;
     }
 
@@ -1686,15 +3090,35 @@
 
   function modernRenderTrips() {
 
+    /*
+      Nur Kopie sortieren.
+
+      Gespeicherte Reihenfolge/Daten
+      werden nicht verändert.
+    */
+
     const trips =
       getTrips()
+
         .slice()
+
         .sort(
-          function (a, b) {
+          function (
+            a,
+            b
+          ) {
 
             return (
-              dateValue(b) -
-              dateValue(a)
+
+              dateValue(
+                b
+              )
+
+              -
+
+              dateValue(
+                a
+              )
             );
           }
         );
@@ -1706,7 +3130,10 @@
       );
 
 
-    if (!container) {
+    if (
+      !container
+    ) {
+
       return;
     }
 
@@ -1714,7 +3141,11 @@
     container.replaceChildren();
 
 
-    if (!trips.length) {
+    /* Keine Fahrten */
+
+    if (
+      !trips.length
+    ) {
 
       const empty =
         document.createElement(
@@ -1739,8 +3170,12 @@
     }
 
 
+    /* Karten */
+
     trips.forEach(
-      function (trip) {
+      function (
+        trip
+      ) {
 
         const start =
           getTripStart(
@@ -1750,6 +3185,18 @@
 
         const end =
           tripEndTime(
+            trip
+          );
+
+
+        const location =
+          tripLocation(
+            trip
+          );
+
+
+        const note =
+          tripNote(
             trip
           );
 
@@ -1776,6 +3223,8 @@
 
         card.innerHTML = `
 
+          <!-- Bild -->
+
           <span class="tourKayakIcon">
 
             <img
@@ -1786,8 +3235,12 @@
           </span>
 
 
+          <!-- Text -->
+
           <span class="tourListMain">
 
+
+            <!-- Titel -->
 
             <span class="tourListTitle">
 
@@ -1800,15 +3253,15 @@
             </span>
 
 
-            <span class="tourListDate">
+            <!-- Datum -->
 
+            <span class="tourListDate">
 
               <span class="tourMetaIcon">
 
                 ${calendarSvg}
 
               </span>
-
 
               <span>
 
@@ -1838,19 +3291,18 @@
 
               </span>
 
-
             </span>
 
 
-            <span class="tourListDistance">
+            <!-- Entfernung -->
 
+            <span class="tourListDistance">
 
               <span class="tourMetaIcon">
 
                 ${rulerSvg}
 
               </span>
-
 
               <span>
 
@@ -1862,12 +3314,57 @@
 
               </span>
 
+            </span>
+
+
+            <!-- Ort -->
+
+            <span class="tourListLocation">
+
+              <span class="tourMetaIcon">
+
+                ${pinSvg}
+
+              </span>
+
+              <span>
+
+                ${escapeHtml(
+                  location
+                )}
+
+              </span>
 
             </span>
 
 
+            ${
+              note.trim()
+
+                ?
+
+                `
+
+                <span class="tourListNote">
+
+                  ${escapeHtml(
+                    note
+                  )}
+
+                </span>
+
+                `
+
+                :
+
+                ''
+            }
+
+
           </span>
 
+
+          <!-- Pfeil -->
 
           <span class="tourChevron">
 
@@ -1898,7 +3395,7 @@
 
 
   /* =========================================================
-     BESTEHENDE FUNKTIONEN ERSETZEN
+     BESTEHENDE ANZEIGEFUNKTIONEN ERSETZEN
      ========================================================= */
 
   window.renderTrips =
