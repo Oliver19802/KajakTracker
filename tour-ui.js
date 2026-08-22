@@ -1,8 +1,9 @@
 /* =========================================================
    KAJAKTRACKER – MODERNE TOURENANSICHT
-   Ändert nur die Darstellung gespeicherter Fahrten.
-   Die vorhandene Speicherung (kajakTrips), GPX-Import,
-   Aufzeichnung und GPX-Export bleiben unverändert.
+   - Neueste Fahrten zuerst
+   - Einheitlicher Titel: Tour TT.MM.JJJJ
+   - Schönere Tour-Karten
+   - Detailansicht mit Karte + Statistik
    ========================================================= */
 
 (function () {
@@ -63,8 +64,8 @@
     }
 
     .tourRouteIcon svg {
-      width: 42px;
-      height: 42px;
+      width: 38px;
+      height: 38px;
     }
 
     .tourListMain {
@@ -72,6 +73,7 @@
     }
 
     .tourListTitle {
+      display: block;
       margin-bottom: 6px;
       overflow: hidden;
       color: #183f55;
@@ -97,6 +99,14 @@
       color: #56a8b3;
       font-size: 16px;
       font-weight: 900;
+    }
+
+    .tourListMetaIcon {
+      width: 18px;
+      min-width: 18px;
+      text-align: center;
+      font-size: 16px;
+      line-height: 1;
     }
 
     .tourChevron {
@@ -265,8 +275,8 @@
       }
 
       .tourRouteIcon svg {
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
       }
 
       .tourListTitle {
@@ -283,15 +293,41 @@
 
   const routeSvg = `
     <svg viewBox="0 0 64 64" aria-hidden="true">
+      <circle
+        cx="17"
+        cy="45"
+        r="5"
+        fill="currentColor"
+      />
+
+      <circle
+        cx="47"
+        cy="17"
+        r="5"
+        fill="currentColor"
+      />
+
       <path
-        d="M12 15 C18 9, 34 18, 45 13 C52 10, 54 15, 47 19
-           C37 24, 19 18, 15 26 C10 36, 30 32, 43 34
-           C53 36, 53 43, 44 46 C34 50, 18 43, 12 50"
+        d="M17 45
+           C24 43, 22 34, 30 32
+           C38 30, 35 21, 47 17"
         fill="none"
         stroke="currentColor"
-        stroke-width="4.2"
+        stroke-width="5"
         stroke-linecap="round"
         stroke-linejoin="round"
+      />
+
+      <path
+        d="M15 17
+           L28 17
+           L32 22"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="4"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        opacity=".75"
       />
     </svg>
   `;
@@ -308,6 +344,23 @@
       {
         day: '2-digit',
         month: 'short',
+        year: 'numeric'
+      }
+    );
+  }
+
+  function formatDateShort(dateString) {
+    const d = new Date(dateString);
+
+    if (Number.isNaN(d.getTime())) {
+      return '';
+    }
+
+    return d.toLocaleDateString(
+      'de-DE',
+      {
+        day: '2-digit',
+        month: '2-digit',
         year: 'numeric'
       }
     );
@@ -416,37 +469,18 @@
   }
 
   function tripTitle(trip) {
-    if (
-      trip.title &&
-      String(
-        trip.title
-      ).trim()
-    ) {
-      return String(
-        trip.title
-      ).trim();
-    }
+    const date =
+      trip.startedAt ||
+      trip.date;
 
-    const d =
-      new Date(
-        trip.startedAt ||
-        trip.date
+    const formatted =
+      formatDateShort(
+        date
       );
 
-    if (
-      Number.isNaN(
-        d.getTime()
-      )
-    ) {
-      return 'Kajaktour';
-    }
-
-    return (
-      'Tour ' +
-      d.toLocaleDateString(
-        'de-DE'
-      )
-    );
+    return formatted
+      ? 'Tour ' + formatted
+      : 'Tour';
   }
 
   function tripEndTime(trip) {
@@ -537,63 +571,51 @@
         <div class="tourStatsCard">
 
           <div class="tourStat">
-
             <div class="tourStatLabel">
               Distanz
             </div>
-
             <div
               class="tourStatValue"
               data-field="distance"
             >
               0,00 km
             </div>
-
           </div>
 
           <div class="tourStat">
-
             <div class="tourStatLabel">
               Dauer
             </div>
-
             <div
               class="tourStatValue"
               data-field="duration"
             >
               00:00:00
             </div>
-
           </div>
 
           <div class="tourStat">
-
             <div class="tourStatLabel">
               Ø Geschwindigkeit
             </div>
-
             <div
               class="tourStatValue"
               data-field="average"
             >
               0,0 km/h
             </div>
-
           </div>
 
           <div class="tourStat">
-
             <div class="tourStatLabel">
               Max. Geschwindigkeit
             </div>
-
             <div
               class="tourStatValue"
               data-field="max"
             >
               0,0 km/h
             </div>
-
           </div>
 
         </div>
@@ -657,7 +679,6 @@
             typeof exportSavedTrip ===
               'function'
           ) {
-
             exportSavedTrip(
               currentDetailId
             );
@@ -834,7 +855,8 @@
               attribution:
                 '&copy; OpenStreetMap contributors'
             }
-          ).addTo(
+          )
+          .addTo(
             detailMap
           );
         }
@@ -842,7 +864,6 @@
         if (
           detailTrackLayer
         ) {
-
           detailMap.removeLayer(
             detailTrackLayer
           );
@@ -960,7 +981,31 @@
 
   function modernRenderTrips() {
     const trips =
-      getTrips();
+      getTrips()
+        .slice()
+        .sort(
+          (a, b) => {
+
+            const dateA =
+              new Date(
+                a.startedAt ||
+                a.date ||
+                0
+              ).getTime();
+
+            const dateB =
+              new Date(
+                b.startedAt ||
+                b.date ||
+                0
+              ).getTime();
+
+            return (
+              dateB -
+              dateA
+            );
+          }
+        );
 
     const container =
       document.getElementById(
@@ -1038,8 +1083,8 @@
 
             <span class="tourListDate">
 
-              <span>
-                ▣
+              <span class="tourListMetaIcon">
+                🗓
               </span>
 
               <span>
@@ -1067,8 +1112,8 @@
 
             <span class="tourListDistance">
 
-              <span>
-                ▱
+              <span class="tourListMetaIcon">
+                ↔
               </span>
 
               <span>
