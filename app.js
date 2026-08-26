@@ -94,11 +94,38 @@ const MAX_VALID_SPEED = 50 / 3.6;
 
 /* Aktuelle Strecke */
 
+const MAP_PANES = {
+  waterwayPane: 410,
+  historyTrackPane: 430,
+  liveTrackPane: 450,
+  navigationPane: 470,
+  poiPane: 500,
+  gpsPane: 520,
+  navigationUiPane: 540
+};
+
+Object.entries(MAP_PANES).forEach(([name, zIndex]) => {
+  if (!map.getPane(name)) map.createPane(name);
+  map.getPane(name).style.zIndex = String(zIndex);
+});
+
+/* Eigene Renderer verhindern, dass Leaflet Linien verschiedener Ebenen
+   versehentlich über einen Renderer im overlayPane zusammenfasst. */
+const waterwayRenderer = L.svg({ pane: 'waterwayPane' });
+const historyTrackRenderer = L.svg({ pane: 'historyTrackPane' });
+const liveTrackRenderer = L.svg({ pane: 'liveTrackPane' });
+const navigationRenderer = L.svg({ pane: 'navigationPane' });
+
+[waterwayRenderer, historyTrackRenderer, liveTrackRenderer, navigationRenderer]
+  .forEach(renderer => renderer.addTo(map));
+
 let line = L.polyline(
   [],
   {
     color: '#8e44ad',
-    weight: 5
+    weight: 5,
+    pane: 'liveTrackPane',
+    renderer: liveTrackRenderer
   }
 ).addTo(map);
 
@@ -106,7 +133,7 @@ const previousTracksLayer = L.layerGroup().addTo(map);
 const navigationLayer = L.layerGroup().addTo(map);
 
 map.createPane('hazardPane');
-map.getPane('hazardPane').style.zIndex = 650;
+map.getPane('hazardPane').style.zIndex = String(MAP_PANES.poiPane);
 
 const locksLayer = L.layerGroup().addTo(map);
 const weirsLayer = L.layerGroup().addTo(map);
@@ -436,8 +463,10 @@ function refreshPreviousTracks() {
     if (latLngs.length < 2) return;
     L.polyline(latLngs, {
       color: '#ffd400',
-      weight: 5,
-      opacity: 0.72,
+      weight: 6,
+      opacity: 0.96,
+      pane: 'historyTrackPane',
+      renderer: historyTrackRenderer,
       interactive: false
     }).addTo(previousTracksLayer);
   });
@@ -515,31 +544,47 @@ async function startWaterNavigation() {
   navigationControlElements.start.disabled = true;
 
   try {
-    /* Öffentlicher BRouter-Dienst mit dem Wasserwegprofil "river". */
-    const response = await fetch(`https://brouter.de/brouter?${params}`);
-    if (!response.ok) throw new Error(`Routing-HTTP ${response.status}`);
-
-    const geojson = await response.json();
-    const feature = geojson.type === 'FeatureCollection'
-      ? geojson.features?.[0]
-      : geojson;
-    const geometry = feature?.geometry;
-    if (!geometry || geometry.type !== 'LineString' || geometry.coordinates.length < 2) {
-      throw new Error('Keine Wasserweg-Geometrie empfangen');
+    /* Bis zu drei BRouter-River-Varianten prüfen. Rot markierte, anhand
+       geladener OSM-Daten gesperrte Wasserwege werden nicht freigegeben. */
+    let feature = null;
+    let latLngs = null;
+    let blockedAlternativeFound = false;
+    for (let alternative = 0; alternative < 3; alternative += 1) {
+      params.set('alternativeidx', String(alternative));
+      const response = await fetch(`https://brouter.de/brouter?${params}`);
+      if (!response.ok) {
+        if (alternative === 0) throw new Error(`Routing-HTTP ${response.status}`);
+        continue;
+      }
+      const geojson = await response.json();
+      const candidate = geojson.type === 'FeatureCollection' ? geojson.features?.[0] : geojson;
+      const geometry = candidate?.geometry;
+      if (!geometry || geometry.type !== 'LineString' || geometry.coordinates.length < 2) continue;
+      const candidateLatLngs = geometry.coordinates.map(c => [Number(c[1]), Number(c[0])]);
+      if (candidateLatLngs.some(c => !Number.isFinite(c[0]) || !Number.isFinite(c[1]))) continue;
+      if (typeof window.kajakRouteUsesBlockedWaterway === 'function' &&
+          window.kajakRouteUsesBlockedWaterway(candidateLatLngs)) {
+        blockedAlternativeFound = true;
+        continue;
+      }
+      feature = candidate;
+      latLngs = candidateLatLngs;
+      break;
     }
-
-    const latLngs = geometry.coordinates.map(c => [Number(c[1]), Number(c[0])]);
-    if (latLngs.some(c => !Number.isFinite(c[0]) || !Number.isFinite(c[1]))) {
-      throw new Error('Ungültige Routendaten');
+    if (!feature || !latLngs) {
+      const error = new Error(blockedAlternativeFound ? 'Route führt über gesperrten Wasserweg' : 'Keine Wasserweg-Geometrie empfangen');
+      error.code = blockedAlternativeFound ? 'BLOCKED_WATERWAY' : 'NO_ROUTE';
+      throw error;
     }
 
     navigationRoute = L.polyline(latLngs, {
       color: '#e52d27',
       weight: 6,
       opacity: 0.9,
+      pane: 'navigationPane',
+      renderer: navigationRenderer,
       interactive: false
     }).addTo(navigationLayer);
-    navigationRoute.bringToFront();
 
     const reportedDistance = Number(feature.properties?.['track-length']);
     const distance = Number.isFinite(reportedDistance)
@@ -556,7 +601,9 @@ async function startWaterNavigation() {
   } catch (error) {
     console.error('Wasserweg-Routing fehlgeschlagen:', error);
     setNavigationMessage(
-      'Keine Wasserweg-Route gefunden. Kein Straßenrouting als Ersatz.',
+      error.code === 'BLOCKED_WATERWAY'
+        ? 'Keine freigegebene Route gefunden: gesperrter Wasserweg wird vermieden.'
+        : 'Keine Wasserweg-Route gefunden. Kein Straßenrouting als Ersatz.',
       true
     );
   } finally {
@@ -569,7 +616,7 @@ function chooseNavigationTarget(event) {
   navigationLayer.clearLayers();
   navigationRoute = null;
   navigationTarget = event.latlng;
-  L.marker(navigationTarget)
+  L.marker(navigationTarget, { pane: 'navigationUiPane' })
     .addTo(navigationLayer)
     .bindPopup('Navigationsziel')
     .openPopup();
@@ -1024,7 +1071,7 @@ function createPoiMarker(feature) {
     iconSize: [32, 32],
     iconAnchor: [16, 16]
   });
-  feature.marker = L.marker(feature.latLng, { icon, pane: 'hazardPane' }).bindPopup(poiPopup(feature));
+  feature.marker = L.marker(feature.latLng, { icon, pane: 'poiPane' }).bindPopup(poiPopup(feature));
   if (config.navigable) feature.marker.on('popupopen', event => {
     const button = event.popup.getElement()?.querySelector('.navigatePoiBtn');
     if (button) button.onclick = () => navigateToPoi(feature);
@@ -2141,7 +2188,7 @@ function onPosition(pos) {
   if (!marker) {
 
     marker =
-      L.marker(c)
+      L.marker(c, { pane: 'gpsPane' })
         .addTo(map);
 
   } else {
@@ -2799,8 +2846,11 @@ function viewTrip(id) {
   L.polyline(
     latLngs,
     {
-      color: '#147aa1',
-      weight: 5
+      color: '#ffd400',
+      weight: 6,
+      opacity: 0.96,
+      pane: 'historyTrackPane',
+      renderer: historyTrackRenderer
     }
   ).addTo(tripMarkers);
 
@@ -3195,18 +3245,18 @@ function deleteTrip(id) {
 
 
   if (!trip) {
-    return;
+    return false;
   }
 
 
   const ok =
     confirm(
-      'Diese Fahrt wirklich löschen?'
+      'Tour wirklich dauerhaft löschen?'
     );
 
 
   if (!ok) {
-    return;
+    return false;
   }
 
 
@@ -3235,6 +3285,8 @@ function deleteTrip(id) {
   renderTrips();
 
   refreshPreviousTracks();
+
+  return true;
 }
 
 

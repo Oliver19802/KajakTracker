@@ -1,11 +1,20 @@
-const CACHE = 'kajaktracker-v27';
+const CACHE = 'kajaktracker-v31';
 
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
+  './dashboard-ui.js',
+  './gps-status.js',
+  './gpx-import.js',
+  './gpx-export-selection.js',
+  './map-layers.js',
+  './navigation-guidance.js',
+  './tour-ui.js',
   './waterway-status.js',
+  './kajaktracker-logo.png',
+  './kajak-tour-icon.png',
   './offline-map.js',
   './poi-data/regions.json',
   './offline-test/data/spreewald-pois.json',

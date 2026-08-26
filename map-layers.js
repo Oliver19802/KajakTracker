@@ -31,13 +31,18 @@
     map.getPane(name).style.zIndex = String(zIndex);
   }
 
-  ensurePane('waterwayPane', 410);
-  ensurePane('historyTrackPane', 420);
-  ensurePane('liveTrackPane', 430);
-  ensurePane('navigationPane', 440);
-  ensurePane('poiPane', 650);
-  ensurePane('gpsPane', 660);
-  ensurePane('navigationUiPane', 670);
+  const paneOrder = typeof MAP_PANES !== 'undefined'
+    ? MAP_PANES
+    : {
+        waterwayPane: 410,
+        historyTrackPane: 430,
+        liveTrackPane: 450,
+        navigationPane: 470,
+        poiPane: 500,
+        gpsPane: 520,
+        navigationUiPane: 540
+      };
+  Object.entries(paneOrder).forEach(([name, zIndex]) => ensurePane(name, zIndex));
 
   /* OpenSeaMap zwischen Basiskarte und Tracks. */
   if (typeof seamark !== 'undefined' && seamark) {
@@ -72,10 +77,11 @@
 
         L.polyline(latLngs, {
           color: '#ffd400',
-          weight: 5,
-          opacity: 0.72,
+          weight: 6,
+          opacity: 0.96,
           interactive: false,
-          pane: 'historyTrackPane'
+          pane: 'historyTrackPane',
+          renderer: historyTrackRenderer
         }).addTo(previousTracksLayer);
       });
     };
@@ -97,10 +103,11 @@
 
         tripMarkers.removeLayer(layer);
         layer.options.pane = 'historyTrackPane';
+        layer.options.renderer = historyTrackRenderer;
         layer.setStyle({
           color: '#ffd400',
-          weight: 5,
-          opacity: 0.78
+          weight: 6,
+          opacity: 0.96
         });
         layer.addTo(tripMarkers);
       });
@@ -118,6 +125,7 @@
 
       navigationLayer.removeLayer(navigationRoute);
       navigationRoute.options.pane = 'navigationPane';
+      navigationRoute.options.renderer = navigationRenderer;
       navigationRoute.setStyle({
         color: '#e52d27',
         weight: 6,

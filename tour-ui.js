@@ -2873,18 +2873,13 @@
           }
 
 
-          if (
-            !confirm(
-              'Möchtest du diese Tour wirklich löschen?'
-            )
-          ) {
-            return;
-          }
-
-
-          deleteTrip(
+          const deleted = deleteTrip(
             currentDetailId
           );
+
+          if (!deleted) {
+            return;
+          }
 
 
           closeDetail();
