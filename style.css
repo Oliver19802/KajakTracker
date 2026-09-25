@@ -310,6 +310,29 @@ button.danger {
   align-items: flex-end;
 }
 
+/* Raise the entire Leaflet corner: a child z-index cannot escape its parent. */
+.map-menu-open .leaflet-top.leaflet-right {
+  z-index: 2000;
+}
+
+.map-menu-open .waterwayStatusLegend {
+  visibility: hidden;
+  pointer-events: none !important;
+}
+
+.waterwayPackages > summary {
+  cursor: pointer;
+  padding: 10px;
+  min-height: 44px;
+  box-sizing: border-box;
+  font-weight: 700;
+}
+
+.waterwayPackages > p,
+.waterwayPackages > a {
+  margin: 8px 10px;
+}
+
 .mapMenuButton {
   display: grid;
   width: 46px;

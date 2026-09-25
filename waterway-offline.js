@@ -156,11 +156,10 @@
   if (typeof map === 'undefined' || typeof L === 'undefined') return;
   const service = new OfflineWaterways();
   window.kajakOfflineWaterways = service;
-  const control = L.control({ position: 'topright' });
-  control.onAdd = () => {
+  const createPackagePanel = () => {
     const box = L.DomUtil.create('details', 'waterwayPackages');
-    box.style.cssText = 'background:white;color:#183f55;border-radius:10px;padding:8px;max-width:min(270px,calc(100vw - 90px));max-height:45vh;overflow:auto;margin-right:50px;font:12px/1.4 system-ui;box-shadow:0 1px 6px #0003';
-    const summary = document.createElement('summary'); summary.textContent = 'Wasserwege offline'; box.append(summary);
+    box.style.cssText = 'background:white;color:#183f55;border-top:1px solid #c8dde1;min-width:0;font:12px/1.4 system-ui';
+    const summary = document.createElement('summary'); summary.textContent = '🌊 Wasserwege offline · DE / PL'; box.append(summary);
     const info = document.createElement('p'); info.textContent = 'Einmal laden, danach ohne Nachladen nutzen. Hintergrundkarte separat speichern.'; box.append(info);
     const installed = document.createElement('p'); box.append(installed);
     const status = document.createElement('p'); status.setAttribute('role', 'status'); box.append(status);
@@ -188,5 +187,11 @@
     service.ready.then(() => { update(); if (service.error) status.textContent = 'Offline-Speicher nicht verfügbar'; });
     update(); return box;
   };
-  control.addTo(map);
+  const menu = document.querySelector('.mapToolsControl');
+  if (menu) {
+    const panel = createPackagePanel();
+    const offlineMapPanel = menu.querySelector('.offlineMapPanel');
+    if (offlineMapPanel) offlineMapPanel.after(panel);
+    else menu.prepend(panel);
+  }
 })();

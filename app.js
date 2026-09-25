@@ -1301,6 +1301,7 @@ function setSearchMessage(message, isError = false) {
 }
 
 function closeMapMenu() {
+  map.getContainer().classList.remove('map-menu-open');
   if (!mapMenuElements.panel) return;
   mapMenuElements.panel.hidden = true;
   mapMenuElements.button.classList.remove('isActive');
@@ -1442,9 +1443,14 @@ function addMapToolsControl() {
     wrapper.appendChild(container);
 
     mapMenuElements = { button: menuButton, panel: container };
+    map.on('resize', () => {
+      container.style.maxHeight = Math.max(80, map.getContainer().clientHeight - 80) + 'px';
+    });
     L.DomEvent.on(menuButton, 'click', () => {
       if (container.hidden) { closeSearchPanel(); closePoiPanel(); }
       container.hidden = !container.hidden;
+      map.getContainer().classList.toggle('map-menu-open', !container.hidden);
+      container.style.maxHeight = Math.max(80, map.getContainer().clientHeight - 80) + 'px';
       menuButton.classList.toggle('isActive', !container.hidden);
       menuButton.setAttribute('aria-expanded', String(!container.hidden));
     });
