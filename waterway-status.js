@@ -1,6 +1,6 @@
 /* =========================================================
    KAJAKTRACKER – BEFAHRBARKEIT VON WASSERWEGEN
-   Grün durchgezogen: befahrbar
+   Blau durchgezogen: befahrbar
    Rot gestrichelt: nicht befahrbar / gesperrt
    ========================================================= */
 
@@ -10,7 +10,9 @@
   if (typeof map === 'undefined' || typeof L === 'undefined') return;
 
   const MIN_ZOOM = 11;
-  const RELOAD_DISTANCE_METERS = 6000;
+  const REQUEST_TIMEOUT_MS = 20000;
+  const CACHE_TTL_MS = 5 * 60 * 1000;
+  const cachedAreas = [];
   const OVERPASS_URLS = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
@@ -30,6 +32,24 @@
   let retryTimer = null;
   let controller = null;
   let requestNumber = 0;
+  let pendingBounds = null;
+  let loadedAt = 0;
+  let failures = 0;
+  let statusElement = null;
+  let preferredEndpoint = 0;
+
+  function setStatus(message) {
+    if (statusElement) statusElement.textContent = message;
+  }
+
+  function cancelRequest() {
+    ++requestNumber;
+    if (controller) controller.abort();
+    controller = null;
+    pendingBounds = null;
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
 
   function accessValue(tags) {
     return String(
@@ -169,18 +189,34 @@
   async function requestOverpass(query, signal) {
     let lastError = null;
 
-    for (const url of OVERPASS_URLS) {
+    for (let offset = 0; offset < OVERPASS_URLS.length; offset += 1) {
+      const endpointIndex = (preferredEndpoint + offset) % OVERPASS_URLS.length;
+      const url = OVERPASS_URLS[endpointIndex];
+      if (signal.aborted) throw new DOMException('Abgebrochen', 'AbortError');
+      const attempt = new AbortController();
+      const abortAttempt = () => attempt.abort();
+      signal.addEventListener('abort', abortAttempt, { once: true });
+      const timeout = setTimeout(abortAttempt, REQUEST_TIMEOUT_MS);
       try {
         const response = await fetch(url, {
           method: 'POST',
           body: new URLSearchParams({ data: query }),
-          signal
+          signal: attempt.signal
         });
         if (!response.ok) throw new Error('HTTP ' + response.status);
-        return await response.json();
+        const data = await response.json();
+        // Overpass may return HTTP 200 with partial results and a runtime error.
+        if (!data || data.remark || !Array.isArray(data.elements)) {
+          throw new Error(data?.remark || 'Ungültige Wasserweg-Antwort');
+        }
+        preferredEndpoint = endpointIndex;
+        return data;
       } catch (error) {
-        if (error.name === 'AbortError') throw error;
+        if (signal.aborted) throw error;
         lastError = error;
+      } finally {
+        clearTimeout(timeout);
+        signal.removeEventListener('abort', abortAttempt);
       }
     }
 
@@ -189,21 +225,46 @@
 
   async function loadWaterways(force = false) {
     if (map.getZoom() < MIN_ZOOM) {
+      cancelRequest();
       layer.clearLayers();
+      blockedWaterways = [];
       loadedBounds = null;
+      setStatus('Für Wasserwege näher heranzoomen');
       return;
     }
 
     /* Bei einem kurzen Netzausfall bleiben bereits geladene Linien sichtbar. */
-    if (!navigator.onLine) return;
-
     const visibleBounds = map.getBounds();
-    if (!force && loadedBounds && loadedBounds.contains(visibleBounds)) return;
+    if (!force && loadedBounds && loadedBounds.contains(visibleBounds) &&
+        Date.now() - loadedAt < CACHE_TTL_MS) {
+      if (pendingBounds && !pendingBounds.contains(visibleBounds)) cancelRequest();
+      setStatus(navigator.onLine ? 'Wasserwege geladen' : 'Offline · zuletzt geladene Wasserwege');
+      return;
+    }
+    // A small pan within the running query must not restart that query.
+    if (pendingBounds && pendingBounds.contains(visibleBounds)) return;
 
-    if (controller) controller.abort();
+    cancelRequest();
+    const cached = cachedAreas.find(entry => entry.bounds.contains(visibleBounds) &&
+      (!navigator.onLine || Date.now() - entry.time < CACHE_TTL_MS));
+    if (cached && !force) {
+      renderWaterways(cached.data);
+      loadedBounds = cached.bounds;
+      loadedAt = cached.time;
+      setStatus(navigator.onLine ? 'Wasserwege geladen' : 'Offline · zuletzt geladene Wasserwege');
+      return;
+    }
+    if (!navigator.onLine) {
+      setStatus('Offline · Wasserwege hier möglicherweise unvollständig');
+      return;
+    }
     controller = new AbortController();
+    const signal = controller.signal;
     const currentRequest = ++requestNumber;
-    const requestBounds = visibleBounds.pad(0.45);
+    // Modest prefetch margin: 0.45 almost quadrupled the visible query area.
+    const requestBounds = visibleBounds.pad(0.15);
+    pendingBounds = requestBounds;
+    setStatus('Wasserwege werden geladen …');
     const bbox = [
       requestBounds.getSouth(),
       requestBounds.getWest(),
@@ -211,60 +272,81 @@
       requestBounds.getEast()
     ].join(',');
 
-    const query = `[out:json][timeout:35];
+    const query = `[out:json][timeout:15];
 way["waterway"~"^(river|canal|stream|ditch)$"](${bbox});
 out tags geom;`;
 
     try {
-      const data = await requestOverpass(query, controller.signal);
-      if (currentRequest !== requestNumber) return;
-
-      const nextLayers = [];
-      const nextBlockedWaterways = [];
-      (data.elements || []).forEach(way => {
-        if (!Array.isArray(way.geometry) || way.geometry.length < 2) return;
-
-        const tags = way.tags || {};
-        const navigable = isNavigable(tags);
-        const explicitlyBlocked = isBlocked(tags);
-
-        /* Kleine, nicht ausdrücklich freigegebene Bäche und Gräben
-           werden nicht pauschal als befahrbar markiert. */
-        if (!navigable && !explicitlyBlocked) return;
-
-        const latLngs = way.geometry.map(point => [point.lat, point.lon]);
-        if (explicitlyBlocked) nextBlockedWaterways.push(latLngs);
-        const polyline = L.polyline(latLngs, lineStyle(tags, navigable));
-        polyline.bindPopup(popupText(tags, navigable));
-        nextLayers.push(polyline);
-      });
-
-      /* Erst nach einem vollständigen Abruf austauschen. So entsteht
-         beim Nachladen kein leerer oder nur teilweise geladener Zustand. */
-      layer.clearLayers();
-      nextLayers.forEach(item => item.addTo(layer));
-      blockedWaterways = nextBlockedWaterways;
-      if (typeof navigationRoute !== 'undefined' && navigationRoute &&
-          typeof clearNavigation === 'function') {
-        const activeRoutePoints = navigationRoute.getLatLngs().map(point => [point.lat, point.lng]);
-        if (window.kajakRouteUsesBlockedWaterway(activeRoutePoints)) {
-          clearNavigation();
-          setNavigationMessage('Navigation beendet: Route führt über einen gesperrten Wasserweg.', true);
-        }
+      const data = await requestOverpass(query, signal);
+      if (currentRequest !== requestNumber || signal.aborted) return;
+      // Do not let a completed old viewport replace the current map.
+      if (!requestBounds.contains(map.getBounds())) {
+        scheduleLoad();
+        return;
       }
+      renderWaterways(data);
       loadedBounds = requestBounds;
-      clearTimeout(retryTimer);
+      loadedAt = Date.now();
+      cachedAreas.unshift({ bounds: requestBounds, data, time: loadedAt });
+      cachedAreas.splice(6);
+      failures = 0;
+      setStatus('Wasserwege geladen');
     } catch (error) {
-      if (error.name !== 'AbortError') {
-        console.error('Wasserweg-Markierung fehlgeschlagen:', error);
-        clearTimeout(retryTimer);
-        retryTimer = setTimeout(() => loadWaterways(true), 4000);
+      if (currentRequest !== requestNumber || signal.aborted) return;
+      console.error('Wasserweg-Markierung fehlgeschlagen:', error);
+      setStatus('Laden fehlgeschlagen · erneuter Versuch folgt');
+      const delay = Math.min(60000, 4000 * 2 ** Math.min(failures++, 4));
+      retryTimer = setTimeout(() => { retryTimer = null; loadWaterways(true); }, delay);
+    } finally {
+      if (currentRequest === requestNumber) {
+        controller = null;
+        pendingBounds = null;
+      }
+    }
+  }
+
+  function renderWaterways(data) {
+    const nextLayers = [];
+    const nextBlockedWaterways = [];
+    (data.elements || []).forEach(way => {
+      if (!Array.isArray(way.geometry) || way.geometry.length < 2) return;
+
+      const tags = way.tags || {};
+      const navigable = isNavigable(tags);
+      const explicitlyBlocked = isBlocked(tags);
+
+      /* Kleine, nicht ausdrücklich freigegebene Bäche und Gräben
+         werden nicht pauschal als befahrbar markiert. */
+      if (!navigable && !explicitlyBlocked) return;
+
+      if (way.geometry.some(point => !point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon))) {
+        throw new Error('Ungültige Wasserweg-Geometrie');
+      }
+      const latLngs = way.geometry.map(point => [point.lat, point.lon]);
+      if (explicitlyBlocked) nextBlockedWaterways.push(latLngs);
+      const polyline = L.polyline(latLngs, lineStyle(tags, navigable));
+      polyline.bindPopup(popupText(tags, navigable));
+      nextLayers.push(polyline);
+    });
+
+    /* Erst nach einem vollständigen Abruf austauschen. So entsteht
+       beim Nachladen kein leerer oder nur teilweise geladener Zustand. */
+    layer.clearLayers();
+    nextLayers.forEach(item => item.addTo(layer));
+    blockedWaterways = nextBlockedWaterways;
+    if (typeof navigationRoute !== 'undefined' && navigationRoute &&
+        typeof clearNavigation === 'function') {
+      const activeRoutePoints = navigationRoute.getLatLngs().map(point => [point.lat, point.lng]);
+      if (window.kajakRouteUsesBlockedWaterway(activeRoutePoints)) {
+        clearNavigation();
+        setNavigationMessage('Navigation beendet: Route führt über einen gesperrten Wasserweg.', true);
       }
     }
   }
 
   function scheduleLoad() {
     clearTimeout(timer);
+    if (map.getZoom() < MIN_ZOOM) { loadWaterways(); return; }
     timer = setTimeout(() => loadWaterways(false), 650);
   }
 
@@ -292,6 +374,9 @@ out tags geom;`;
     box.innerHTML =
       '<div><span style="display:inline-block;width:24px;border-top:5px solid #168bd2;margin-right:6px;vertical-align:middle"></span>Befahrbar</div>' +
       '<div><span style="display:inline-block;width:24px;border-top:4px dashed #e32636;margin-right:6px;vertical-align:middle"></span>Nicht befahrbar</div>';
+    statusElement = L.DomUtil.create('div', 'waterwayLoadStatus', box);
+    statusElement.setAttribute('role', 'status');
+    statusElement.style.cssText = 'font-size:11px;white-space:normal;max-width:240px;margin-top:3px';
     L.DomEvent.disableClickPropagation(box);
     return box;
   };
@@ -299,5 +384,6 @@ out tags geom;`;
 
   map.on('moveend zoomend', scheduleLoad);
   window.addEventListener('online', () => loadWaterways(true));
+  window.addEventListener('offline', () => { cancelRequest(); loadWaterways(); });
   scheduleLoad();
 })();
