@@ -13,8 +13,9 @@
     const cells = new Set();
     let bytes = 0;
     for (const p of m.parts) {
-      if (!/^[a-f0-9]{64}$/.test(p.sha256) || p.file !== `${country}/${p.sha256}.json` ||
+      if (!/^[a-f0-9]{64}$/.test(p.sha256) || p.file !== `${country}/${p.sha256}.json.gz` ||
           !Number.isSafeInteger(p.bytes) || p.bytes < 1 || p.bytes > 32 * 1024 * 1024 ||
+          !Number.isSafeInteger(p.decodedBytes) || p.decodedBytes < 1 || p.decodedBytes > 32 * 1024 * 1024 ||
           !Array.isArray(p.cells) || !p.cells.length) throw new Error('Ungültiger Paketabschnitt');
       for (const key of p.cells) {
         if (!/^-?\d+:-?\d+$/.test(key) || cells.has(key)) throw new Error('Ungültiges Kachelverzeichnis');
@@ -22,7 +23,7 @@
       }
       bytes += p.bytes;
     }
-    if (bytes !== m.bytes || bytes > 1024 * 1024 * 1024) throw new Error('Ungültige Paketgröße');
+    if (bytes !== m.bytes || bytes > 1024 * 1024 * 1024 || m.decodedBytes !== m.parts.reduce((sum,p)=>sum+p.decodedBytes,0)) throw new Error('Ungültige Paketgröße');
     return m;
   }
   function validatePart(part, expected) {
@@ -94,7 +95,8 @@
         const manifest = validateManifest(JSON.parse(new TextDecoder().decode(await this.fetchFile(`${BASE}${country}.json`, signal))), country);
         const old = this.installed.find(item => item.country === country);
         const space = await navigator.storage?.estimate?.();
-        if (space?.quota && space.quota - (space.usage || 0) < manifest.bytes * 2 + 10 * 1024 * 1024) throw new Error('Nicht genügend Gerätespeicher für das neue Paket');
+        if (typeof DecompressionStream === 'undefined') throw new Error('Bitte Browser aktualisieren: komprimierte Länderpakete werden nicht unterstützt');
+        if (space?.quota && space.quota - (space.usage || 0) < manifest.decodedBytes * 2 + 10 * 1024 * 1024) throw new Error('Nicht genügend Gerätespeicher für das neue Paket');
         let received = 0;
         for (const expected of manifest.parts) {
           const bytes = await this.fetchFile(BASE + expected.file, signal);
@@ -102,7 +104,9 @@
           if (bytes.byteLength !== expected.bytes) throw new Error('Unvollständiger Download');
           const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
           if (hash !== expected.sha256) throw new Error('Prüfsumme stimmt nicht');
-          const part = validatePart(JSON.parse(new TextDecoder().decode(bytes)), expected);
+          const decoded = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+          if (decoded.byteLength !== expected.decodedBytes) throw new Error('Unvollständig entpackter Paketabschnitt');
+          const part = validatePart(JSON.parse(new TextDecoder().decode(decoded)), expected);
           const tx = this.db.transaction('tiles', 'readwrite'), complete = done(tx);
           for (const tile of part.tiles) tx.objectStore('tiles').put({ ...tile, id: `${revision}:${tile.key}`, revision });
           await complete;

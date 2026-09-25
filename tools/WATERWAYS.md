@@ -21,3 +21,5 @@ node --test tests/waterway-loading.test.cjs tests/waterway-packages.test.cjs wor
 ```
 
 Zusätzlich im lokalen Browser `/tests/waterway-storage.html` öffnen. Die dort verwendete temporäre Testdatenbank ist vom Anwendungsspeicher getrennt und wird danach gelöscht.
+
+Die Paketabschnitte sind gzip-komprimiert. Die App prüft die Prüfsumme vor dem Entpacken und die entpackte Länge danach. Nicht freigegebene und nicht gesperrte Bäche/Gräben werden bereits beim Erzeugen ausgelassen, da die Karte sie ebenfalls nicht farbig darstellt. Die Speicherplatzprüfung berücksichtigt die entpackte Größe.
