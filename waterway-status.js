@@ -37,6 +37,7 @@
   let failures = 0;
   let statusElement = null;
   let preferredEndpoint = 0;
+  let offlineView = 0;
 
   function setStatus(message) {
     if (statusElement) statusElement.textContent = message;
@@ -224,6 +225,7 @@
   }
 
   async function loadWaterways(force = false) {
+    const view = ++offlineView;
     if (map.getZoom() < MIN_ZOOM) {
       cancelRequest();
       layer.clearLayers();
@@ -231,6 +233,26 @@
       loadedBounds = null;
       setStatus('Für Wasserwege näher heranzoomen');
       return;
+    }
+
+    if (window.kajakOfflineWaterways) {
+      // Always consult the device before any online request, including retries.
+      await window.kajakOfflineWaterways.ready;
+      if (view !== offlineView) return;
+      if (window.kajakOfflineWaterways.installed.length) {
+        cancelRequest();
+        try {
+          const data = await window.kajakOfflineWaterways.query(map.getBounds());
+          if (view !== offlineView) return;
+          renderWaterways(data);
+          loadedBounds = null;
+          setStatus(data.elements.length ? `Offline · ${data.label}` : 'Keine gespeicherten Wasserwege in diesem Ausschnitt');
+        } catch (error) {
+          if (view === offlineView) setStatus('Offline-Paket nicht lesbar · bitte erneut herunterladen');
+          console.error('Offline-Wasserwege:', error);
+        }
+        return;
+      }
     }
 
     /* Bei einem kurzen Netzausfall bleiben bereits geladene Linien sichtbar. */
@@ -385,5 +407,6 @@ out tags geom;`;
   map.on('moveend zoomend', scheduleLoad);
   window.addEventListener('online', () => loadWaterways(true));
   window.addEventListener('offline', () => { cancelRequest(); loadWaterways(); });
+  window.addEventListener('kajak:waterways-offline', () => { cancelRequest(); loadWaterways(); });
   scheduleLoad();
 })();

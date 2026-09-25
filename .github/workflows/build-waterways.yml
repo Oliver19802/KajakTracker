@@ -1,0 +1,83 @@
+name: Offline-Wasserwege Deutschland und Polen
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - tools/build-waterways.cjs
+      - .github/workflows/build-waterways.yml
+permissions:
+  contents: read
+concurrency:
+  group: country-waterway-packages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - country: de
+            extract: germany
+          - country: pl
+            extract: poland
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Osmium
+        run: sudo apt-get update && sudo apt-get install -y osmium-tool
+      - name: Download country extract
+        env:
+          EXTRACT: ${{ matrix.extract }}
+        run: |
+          curl --fail --location --retry 3 --output source.osm.pbf "https://download.geofabrik.de/europe/${EXTRACT}-latest.osm.pbf"
+          osmium fileinfo -g header.option.osmosis_replication_timestamp source.osm.pbf > source-date.txt
+      - name: Extract waterway geometry and tags
+        run: |
+          osmium tags-filter source.osm.pbf w/waterway=river,canal,stream,ditch -o waterways.osm.pbf
+          rm source.osm.pbf
+          osmium export waterways.osm.pbf -f geojsonseq --add-unique-id=type_id -o waterways.geojsonseq
+      - name: Build country package
+        env:
+          COUNTRY: ${{ matrix.country }}
+        run: node --max-old-space-size=5500 tools/build-waterways.cjs waterways.geojsonseq "$COUNTRY" output "$(cat source-date.txt)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: waterways-${{ matrix.country }}
+          path: output/
+          retention-days: 7
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: repo
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: waterways-*
+          merge-multiple: true
+          path: packages
+      - name: Publish complete packages atomically
+        working-directory: repo
+        run: |
+          if git show-ref --verify --quiet refs/remotes/origin/waterway-data; then
+            git checkout -B waterway-data origin/waterway-data
+          else
+            git checkout --orphan waterway-data
+            git rm -rf .
+          fi
+          cp -r ../packages/. .
+          printf '%s\n' 'Waterway data: © OpenStreetMap contributors, ODbL 1.0. Source: Geofabrik. https://www.openstreetmap.org/copyright' > README.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add de.json pl.json de pl README.txt
+          git diff --cached --quiet || git commit -m 'Update offline waterway packages for Germany and Poland'
+          git push origin HEAD:waterway-data

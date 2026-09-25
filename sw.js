@@ -1,4 +1,4 @@
-const CACHE = 'kajaktracker-v32';
+const CACHE = 'kajaktracker-v33';
 
 const ASSETS = [
   './',
@@ -13,6 +13,7 @@ const ASSETS = [
   './navigation-guidance.js',
   './tour-ui.js',
   './waterway-status.js',
+  './waterway-offline.js',
   './kajaktracker-logo.png',
   './kajak-tour-icon.png',
   './offline-map.js',

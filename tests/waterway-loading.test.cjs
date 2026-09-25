@@ -10,7 +10,7 @@ function bounds(w = 0, e = 1) {
     pad:p => bounds(w-(e-w)*p,e+(e-w)*p),
     getSouth:()=>0,getNorth:()=>1,getWest:()=>w,getEast:()=>e};
 }
-function setup(ignoreAbort = false) {
+function setup(ignoreAbort = false, offline = null) {
   let id = 0;
   const timers = new Map(), calls = [], events = {}, windowEvents = {}, nodes = [];
   const layer = {items:[],addTo(){return this;},clearLayers(){this.items=[];}};
@@ -18,7 +18,7 @@ function setup(ignoreAbort = false) {
     getPane:()=>({style:{}}),_controlCorners:{bottomcenter:{}},on:(names,fn)=>names.split(' ').forEach(n=>events[n]=fn)};
   const navigator = {onLine:true};
   vm.runInNewContext(source, {
-    map,navigator,window:{addEventListener:(n,fn)=>windowEvents[n]=fn},
+    map,navigator,window:{kajakOfflineWaterways:offline,addEventListener:(n,fn)=>windowEvents[n]=fn},
     AbortController,DOMException,URLSearchParams,Date,console:{error(){}},waterwayRenderer:{},escapeHtml:s=>s,
     setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:i=>timers.delete(i),
     fetch:(url,options)=>new Promise((resolve,reject)=>{
@@ -107,4 +107,23 @@ test('invalid JSON shape and HTTP errors fall back to the next endpoint',async()
 test('the next area starts with the last successful server',async()=>{
   const s=setup();await s.tick(650);await s.tick(20000);await s.reply(1,data());
   await s.move(bounds(8,9));assert.equal(s.calls[2].url,s.calls[1].url);
+});
+test('installed country packages render without any fetch, including reconnect',async()=>{
+  let queries=0;
+  const offline={ready:Promise.resolve(),installed:[{country:'de'}],query:async()=>{queries++;return {...data(),label:'Deutschland'};}};
+  const s=setup(false,offline);await s.tick(650);
+  assert.equal(s.calls.length,0);assert.equal(s.layer.items.length,1);assert.match(s.status(),/Offline/);
+  await s.move(bounds(8,9));s.windowEvents.online();await flush();
+  assert.equal(s.calls.length,0);assert.equal(queries,3);
+});
+test('a missing or broken local area never silently downloads online data',async()=>{
+  const offline={ready:Promise.resolve(),installed:[{country:'de'}],query:async()=>{throw new Error('lost tile');}};
+  const s=setup(false,offline);await s.tick(650);
+  assert.equal(s.calls.length,0);assert.match(s.status(),/nicht lesbar/);
+});
+test('a late disk read cannot restore waterways after zooming out',async()=>{
+  let resolve;
+  const offline={ready:Promise.resolve(),installed:[{country:'de'}],query:()=>new Promise(r=>{resolve=r;})};
+  const s=setup(false,offline);await s.tick(650);s.map.zoom=10;s.events.zoomend();await flush();
+  resolve({...data(),label:'Deutschland'});await flush();assert.equal(s.layer.items.length,0);
 });
