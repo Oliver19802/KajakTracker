@@ -10,7 +10,7 @@ permissions:
   contents: read
 concurrency:
   group: country-waterway-packages
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -38,7 +38,7 @@ jobs:
         env:
           EXTRACT: ${{ matrix.extract }}
         run: |
-          curl --fail --location --retry 3 --output source.osm.pbf "https://download.geofabrik.de/europe/${EXTRACT}-latest.osm.pbf"
+          curl --ipv4 --fail --location --connect-timeout 30 --max-time 900 --speed-limit 102400 --speed-time 60 --retry 3 --retry-all-errors --output source.osm.pbf "https://download.geofabrik.de/europe/${EXTRACT}-latest.osm.pbf"
           osmium fileinfo -g header.option.osmosis_replication_timestamp source.osm.pbf > source-date.txt
       - name: Extract waterway geometry and tags
         run: |
