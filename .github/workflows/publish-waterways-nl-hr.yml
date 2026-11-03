@@ -1,0 +1,76 @@
+name: Publish Netherlands and Croatia waterway packages
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-waterways-nl-hr.yml]
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Successful country artifact source run
+        required: true
+        default: '41655066861'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    env:
+      SOURCE_RUN: ${{ inputs.source_run || '41655066861' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Wait for the two requested country artifacts
+        run: |
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+          for attempt in $(seq 1 80); do
+            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN/artifacts" --jq '[.artifacts[] | select(.expired == false and (.name == "waterways-nl" or .name == "waterways-hr"))] | length')
+            if [ "$count" = "2" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "Requested artifacts are not ready"; exit 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: waterways-nl
+          path: packages
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: waterways-hr
+          path: packages
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ github.token }}
+      - name: Validate complete packages with the app validators
+        run: |
+          node <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm'),crypto=require('node:crypto'),zlib=require('node:zlib');
+          const ctx={window:{}};vm.runInNewContext(fs.readFileSync('waterway-offline.js','utf8'),ctx);
+          for(const country of ['nl','hr']) {
+            const m=JSON.parse(fs.readFileSync('packages/'+country+'.json'));
+            ctx.window.KajakWaterwayPackageValidation.validateManifest(m,country);
+            for(const p of m.parts) {
+              const b=fs.readFileSync('packages/'+p.file);
+              if(b.length!==p.bytes || crypto.createHash('sha256').update(b).digest('hex')!==p.sha256)throw Error('Invalid checksum');
+              const decoded=zlib.gunzipSync(b);if(decoded.length!==p.decodedBytes)throw Error('Invalid size');
+              ctx.window.KajakWaterwayPackageValidation.validatePart(JSON.parse(decoded),p);
+            }
+            console.log(country+': '+m.ways+' ways, '+m.bytes+' bytes verified');
+          }
+          JS
+      - name: Publish only the two requested country packages
+        run: |
+          git worktree add publish-tree origin/waterway-data
+          cp -r packages/nl packages/hr packages/nl.json packages/hr.json publish-tree/
+          cd publish-tree
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- nl.json hr.json nl hr
+          git diff --cached --quiet || git commit -m 'Add verified Netherlands and Croatia waterway packages'
+          git push origin HEAD:waterway-data
