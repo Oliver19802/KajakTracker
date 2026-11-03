@@ -38,3 +38,15 @@ test('generated package passes the client validators and exact checksums',async(
     assert.throws(()=>validatePart({tiles:[]},m.parts[0]));
   } finally { fs.rmSync(dir,{recursive:true,force:true}); }
 });
+
+for (const [country, label, extract] of [['nl','Niederlande','netherlands'],['hr','Kroatien','croatia']]) {
+  test(country + ' uses correct labels, source and compatible package format',async()=>{
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),'kajak-country-test-'));
+    try {
+      const input=path.join(dir,'source.jsonseq');fs.writeFileSync(input,JSON.stringify(feature)+'\n');
+      const m=await build(input,country,dir,'2026-11-02T00:00:00Z');
+      validateManifest(m,country);assert.equal(m.label,label);assert.ok(m.source.endsWith('/'+extract+'.html'));
+      for(const p of m.parts){const bytes=fs.readFileSync(path.join(dir,p.file));assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),p.sha256);validatePart(JSON.parse(gunzipSync(bytes)),p);}
+    } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+  });
+}

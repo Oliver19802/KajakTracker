@@ -1,4 +1,4 @@
-name: Offline-Wasserwege Deutschland und Polen
+name: Offline-Wasserwege Deutschland, Polen, Niederlande und Kroatien
 on:
   workflow_dispatch:
   push:
@@ -23,6 +23,10 @@ jobs:
             extract: germany
           - country: pl
             extract: poland
+          - country: nl
+            extract: netherlands
+          - country: hr
+            extract: croatia
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -78,6 +82,6 @@ jobs:
           printf '%s\n' 'Waterway data: © OpenStreetMap contributors, ODbL 1.0. Source: Geofabrik. https://www.openstreetmap.org/copyright' > README.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add de.json pl.json de pl README.txt
-          git diff --cached --quiet || git commit -m 'Update offline waterway packages for Germany and Poland'
+          git add de.json pl.json nl.json hr.json de pl nl hr README.txt
+          git diff --cached --quiet || git commit -m 'Update offline waterway packages for Germany, Poland, Netherlands and Croatia'
           git push origin HEAD:waterway-data

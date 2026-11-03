@@ -4,6 +4,7 @@ const path = require('node:path');
 const readline = require('node:readline');
 const crypto = require('node:crypto');
 const { gzipSync } = require('node:zlib');
+const COUNTRIES = { de: ['Deutschland', 'germany'], pl: ['Polen', 'poland'], nl: ['Niederlande', 'netherlands'], hr: ['Kroatien', 'croatia'] };
 const STEP = 0.25;
 const TAGS = ['waterway', 'name', 'canoe', 'boat', 'access', 'width'];
 function cellsFor(geometry) {
@@ -35,7 +36,7 @@ function addFeature(tiles, feature, ordinal) {
   return 1;
 }
 async function build(input, country, output, sourceDate) {
-  if (!['de', 'pl'].includes(country)) throw new Error('Unknown country');
+  if (!Object.hasOwn(COUNTRIES, country)) throw new Error('Unknown country');
   const tiles = new Map();
   let count = 0, ordinal = 0;
   for await (const line of readline.createInterface({ input: fs.createReadStream(input), crlfDelay: Infinity })) {
@@ -64,10 +65,10 @@ async function build(input, country, output, sourceDate) {
   }
   flush();
   const version = crypto.createHash('sha256').update(parts.map(p => p.sha256).join('')).digest('hex');
-  const manifest = { schema: 1, country, label: country === 'de' ? 'Deutschland' : 'Polen', version,
+  const manifest = { schema: 1, country, label: COUNTRIES[country][0], version,
     generatedAt: new Date().toISOString(), sourceDate, step: STEP, ways: count,
     attribution: '© OpenStreetMap contributors · ODbL 1.0 · Geofabrik',
-    source: `https://download.geofabrik.de/europe/${country === 'de' ? 'germany' : 'poland'}.html`,
+    source: `https://download.geofabrik.de/europe/${COUNTRIES[country][1]}.html`,
     bytes: parts.reduce((sum, p) => sum + p.bytes, 0), decodedBytes: parts.reduce((sum, p) => sum + p.decodedBytes, 0), parts };
   fs.writeFileSync(path.join(output, `${country}.json`), JSON.stringify(manifest));
   console.log(`${country}: ${count} ways, ${tiles.size} tiles, ${manifest.bytes} bytes`);

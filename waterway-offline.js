@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const BASE = 'https://raw.githubusercontent.com/Oliver19802/KajakTracker/waterway-data/';
-  const COUNTRIES = { de: 'Deutschland', pl: 'Polen' };
+  const COUNTRIES = { de: 'Deutschland', pl: 'Polen', nl: 'Niederlande', hr: 'Kroatien' };
   const done = tx => new Promise((resolve, reject) => {
     tx.oncomplete = resolve;
     tx.onabort = tx.onerror = () => reject(tx.error || new Error('Speichern fehlgeschlagen'));
@@ -159,7 +159,7 @@
   const createPackagePanel = () => {
     const box = L.DomUtil.create('details', 'waterwayPackages');
     box.style.cssText = 'background:white;color:#183f55;border-top:1px solid #c8dde1;min-width:0;font:12px/1.4 system-ui';
-    const summary = document.createElement('summary'); summary.textContent = '🌊 Wasserwege offline · DE / PL'; box.append(summary);
+    const summary = document.createElement('summary'); summary.textContent = '🌊 Wasserwege offline · DE / PL / NL / HR'; box.append(summary);
     const info = document.createElement('p'); info.textContent = 'Einmal laden, danach ohne Nachladen nutzen. Hintergrundkarte separat speichern.'; box.append(info);
     const installed = document.createElement('p'); box.append(installed);
     const status = document.createElement('p'); status.setAttribute('role', 'status'); box.append(status);
